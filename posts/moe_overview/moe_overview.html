@@ -4,14 +4,80 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mixture-of-Experts (MoE) Overview</title>
-    <link rel="stylesheet" href="../../article_style.css">
+    <link rel="stylesheet" type="text/css" href="../../style.css">
 </head>
 <body>
     <header>
         <h1>Mixture-of-Experts (MoE) Overview</h1>
     </header>
     <main>
-        Some text
+        <p>
+            "[MoE] consists of a number of experts, each a simple feed-forward NN, and a trainable gating network which selects a sparse combination of the experts to process each input (Shazeer, 2017)...[the MoE selects] a potentially different combination of experts at each [token]. The different experts tend to become highly specialized based on syntax and semantics."
+        </p>
+        <p>
+            Key ideas used in the MoEs are sparsity, parallelism, and meta-learning.
+        </p>
+        <h2>MoE Benefits:</h2>
+        <h3>Parallelism:</h3>
+        <ul>
+            <li>Each expert learns to "specialize" in one "type" of data (e.g. Expert 1 focuses on cats while Expert 2 focuses on dogs for a MoE vision classifier).</li>
+            <li>This allows for increased throughput as different types of data are concurrently worked on by multiple experts at once.</li>
+        </ul>
+        <h3>Efficient Parameter Usage with Sparsity:</h3>
+        <ul>
+            <li>While dense transformers utilize large portions of their total weights during training & inference, MoE transformers learn to selectively activate subsets of the model weights during training 7 inference.</li>
+            <li>This allows light-weight, but powerful models to emerge.</li>
+        </ul>
+        <h3>Meta-Learning:</h3>
+        <ul>
+            <li>Classical conditional computation methods often used human-made heuristics for the model to work with, effectively decreasing their abilities to generalize to internet-scale datasets (e.g. most conditional computation vision models were often benchmarked with datasets only up to 600,000 images).</li>
+            <li>With MoE transformers, the gating network is jointly trained along with the experts using back-prop, effectively decreasing the bias that may come with human-made heuristics.</li>
+            <li>⇒ The question then becomes one of data-quality: "What is good data that provides the most information during training?"</li>
+        </ul>
+        <h3>Energy-Efficiency:</h3>
+        <ul>
+            <li>Sparsity of MoEs naturally saves energy usage both during training and inference, which decreases model training and upkeep costs along with reducing carbon footprints.</li>
+            <li>Decreased number of activated parameters both during training and inference means decreased use of electricity due to less computation.</li>
+            <li>GLaM, an early MoE LLM, used only ⅓ energy and ½ FLOPs for inference to be on par with GPT-3.</li>
+        </ul>
+        <h2>Misc.</h2>
+        <h3>Balancing of Expert Importance:</h3>
+        <ul>
+            <li>To prevent converging to a state where only a few experts solve everything, an extra loss term(Limportance) is included to make sure each expert is weighted equally in importance.</li>
+        </ul>
+        <h3>Preventing Synchronization Overheads:</h3>
+        <ul>
+            <li>Effective parallelism comes from having balanced loads distributed to each component. If Expert 1 takes in 100 examples while Expert 2 takes only 1, there is a synchronization overhead.</li>
+            <li>To prevent this, another loss term(Lload) is added, which reinforces Experts to have approximately equal number of examples.</li>
+        </ul>
+        <h2>Downsides:</h2>
+        <h3>Higher Risk of Training Instability:</h3>
+        <ul>
+            <li>Sparsity is a double-edged sword where it theoretically creates many discontinuities that result in NaNs or Infs.</li>
+            <li>Early MoE implementations merely skipped weight updates if there were NaNs or Infs(GLaM; Du, 2017) and reverted training back to the previous checkpoint.</li>
+            <li>This is another reason why large pre-training datasets were needed.</li>
+        </ul>
+        <h3>Need Large Batch Sizes:</h3>
+        <ul>
+            <li>Hence, large datasets to train.</li>
+            <li>Larger pre-training datasets are needed to cover the sparsity that MoEs bring.</li>
+        </ul>
+        <h3>Need Many GPUs:</h3>
+        <ul>
+            <li>Though they don't have to be hundreds of A100s, MoEs take advantage of high parallelism, which assumes you have access to many GPU devices to split computations across.</li>
+        </ul>
+        <h2>Closing Thoughts:</h2>
+        <h3>Scaling in low-resource environments:</h3>
+        <p>
+            I don't think scaling is limited only to compute-rich places like google, meta, openai, etc. At the heart of scaling techniques is the effective usage of parallelism and GPU programming that leverages the characteristics of GPUs. And low-compute environments are places that need to pay attention to these the most.
+        </p>
+        <p>
+            It's easy to get discouraged by the sheer number of parameters these MoE models carry, but they carry ideas that we should be asking in academia:
+        </p>
+        <ul>
+            <li>"Are we using the GPUs that we have to the max? How do we increase GPU utilization?"</li>
+            <li>"How can we train a better model with less data? What are the metrics for good data?"</li>
+        </ul>
         <br><br>
         <img src="images/architecture_compare.png" alt="Mixture-of-Experts Image 1" width="600" height="300">
     </main>
