@@ -21,7 +21,18 @@ header {
     padding: 50px;
     text-align: center;
     margin-bottom: 20px;
+    /* position: relative; */
 }
+.header-content {
+    /* display: flex;
+    align-items: center;
+    justify-content: center; */
+    text-align: right;
+}
+/* .header-content h1 {
+    margin: 0;
+    margin-right: 20px;
+} */
 main {
     padding: 0 50px;
     text-align: left;
@@ -48,8 +59,8 @@ li {
 }
 .about-me-link {
     position: absolute;
-    top:40px;
-    right: 60px;
+    /* top:20px; */
+    /* left: 350px; */
     color: #413E3E;
     text-decoration: none;
 }
@@ -64,9 +75,9 @@ li {
     display: flex;
 }
 .post-title {
-    color: red;
+    color: #413E3E;
     font-size: 24px;
-    font-weight: bold;
+    /* font-weight: bold; */
     margin-bottom: 5px;
 }
 .post-description {
@@ -80,6 +91,27 @@ li {
     width: auto;
     height: 200px
 }
+/* a:link, a:visited {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: #b10f0f;
+} */
+a:link, a:visited {
+    color: inherit;
+    text-decoration: none;
+    position: relative;
+}
+a::after {
+    content: ''; /* No content, just the underline */
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -5px; /* 20px below the text */
+    height: 1px; /* Thickness of the underline */
+    background-color: #ff6800; /* Color of the underline */
+    /* /* transition: background-color 0.3s; */
+}
+
 .date {
     /* position: absolute; */
     top: 110px;
