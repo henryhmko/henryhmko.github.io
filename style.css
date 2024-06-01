@@ -29,6 +29,10 @@ header {
     justify-content: center; */
     text-align: right;
 }
+div.heading {
+    font-weight: bold;
+    margin-top: 4ch;
+}
 /* .header-content h1 {
     margin: 0;
     margin-right: 20px;
