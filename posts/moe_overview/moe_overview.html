@@ -13,11 +13,11 @@
     </header>
     <main>
         <center><img src="images/MoE_architecture.png" alt="MoE Architecture" width="900" height="auto" style="margin-left:auto; margin-right: auto;"></center>
-        <p>
+        <p><em>
             "[MoE] consists of a number of experts, each a simple feed-forward NN, and a trainable gating network which selects a sparse combination of the experts to process each input (Shazeer, 2017)...[the MoE selects] a potentially different combination of experts at each [token]. The different experts tend to become highly specialized based on syntax and semantics."
-        </p>
+        </p></em>
         <p>
-            Key ideas used in the MoEs are sparsity, parallelism, and meta-learning. <br>
+            Key ideas used in the MoEs are <span class="bold-extra-bold">sparsity, parallelism, and meta-learning.</span><br>
             <br>
             Here is a single MoE block and an example gating network inside of it.
         </p>
@@ -82,7 +82,7 @@
         <br>
         </ul>
         <h2>Closing Thoughts:</h2>
-        <h3>Scaling in low-resource environments:</h3>
+        <h3>Scaling in low-resource environments</h3>
         <p>
             I don't think scaling is limited only to compute-rich places like google, meta, openai, etc. At the heart of scaling techniques is the effective usage of parallelism and GPU programming that leverages the characteristics of GPUs. And low-compute environments are places that need to pay attention to these the most.
         </p>

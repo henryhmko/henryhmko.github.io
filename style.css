@@ -66,3 +66,21 @@ li {
     color: #888;
     font-style: italic;
 }
+.bold-light {
+    font-weight: 300;
+}
+.bold-regular {
+    font-weight: 400;
+}
+.bold-medium {
+    font-weight: 500;
+}
+.bold-semi-bold {
+    font-weight: 600;
+}
+.bold-bold {
+    font-weight: 700;
+}
+.bold-extra-bold {
+    font-weight: 1000;
+}
