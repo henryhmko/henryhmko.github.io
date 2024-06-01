@@ -14,7 +14,7 @@
     <main>
         <!-- <center><img src="images/MoE_architecture.png" alt="MoE Architecture" width="900" height="auto" style="margin-left:auto; margin-right: auto;"></center> -->
         <p>NVIDIA's latest GPU, the Blackwell series, has taken another leap forward with its support for FP4 representations. But where did this idea of leveraging lower precision formats for efficient ML all start? What are the techniques used to amend underflows/overflows despite using reduced precision formats? This series on Mixed Precision Training explores the origins and evolutions of this approach, starting from the OG Mixed Precision Training paper released way back in 2017.</p>
-        <p><em>tldr</em>: Normal ML training is done with full precision(FP32). Mixed Precision Training reduces memory requirements by &lt;50% by using reduced precision(FP16) for subsets of the model, all without losing model accuracy.</p>
+        <p><em>tldr</em>: Normal ML training is done with full precision(FP32). Mixed Precision Training reduces memory requirements to less than 50% by using reduced precision(FP16) for subsets of the model, all without losing model accuracy.</p>
         <br>
         <center><img src="images/GPU_timeline.png" alt="NVIDIA's GPU Timeline" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
     <br>
@@ -43,11 +43,12 @@
     <h3>Q. Isn't it expensive to store a copy of the weights?</h3>
     <p>It may seem redundant and expensive to keep a separate copy of the weights in FP32. The weights indeed take up more memory, but the overall memory requirement is significantly reduced as activations outweigh the weights in size, especially when models scale and expensive optimizers like Adam are used.</p>
     <center><img src="images/weights_vs_activations.png" alt="MoE Architecture" width="500" height="auto" style="margin-left:auto; margin-right: auto;"></center>
-    <p>The figure above shows us how activations take up significantly more memory as models scale to many layers. This shows why MPT is advantageous despite keeping a separate copy of weights.</p>
+    <p>The figure above (Mishra et al, 2017) shows us how activations take up significantly more memory as models scale to many layers. This shows why MPT is advantageous despite keeping a separate copy of weights.</p>
 
     <h3>Q. Isn't the narrower dynamic range of FP16 an issue?</h3>
     <p>It is indeed an issue and the paper addresses 3 techniques to amend this. But first, let's see how much of an issue this actually is.<br>
-    Below are two figures that show the amount of underflow that will result for the weights(right) and activations(left).</p>
+        <br>
+    Below are two figures (Micikevicius et al, 2017) that show the amount of underflow that will result for the weights(right) and activations(left).</p>
     <br>
     <center><img src="images/FP16_range_drops.png" alt="MoE Architecture" width="700" height="auto" style="margin-left:auto; margin-right: auto;"></center>
 
@@ -64,13 +65,21 @@
 
     <h3>Loss-Scaling</h3>
     <p>Recall that most of the gradients tend to lie outside the representable range of FP16, which quickly destabilizes training.<br>
+        <br>
     A naive solution is to scale all the gradients by some factor so they reside within the representable range of FP16, but the paper proposes a simpler solution: scale the loss BEFORE any backprop instead. By the chain rule, all the following gradients will be scaled by the same factor, making this a simple one-liner change.<br>
+    <br>
     It is important to remember to unscale the gradients before performing the weight update. So technically it is a two-liner change instead of one.</p>
 
     <h3>Accumulating FP16 Products into FP32</h3>
     <p>The paper says the stable training of some models required accumulating partial products of FP16 vector dot-products into FP32 to prevent performance drops. Solutions to this is a gray area where joint efforts in software and hardware advancements are made.</p>
     <p>First, hardware advancements were inventing specialized GPU cores that support FP32 accumulations of FP16 inputs. This was first introduced in 2017 with NVIDIA's Tesla V100 GPUs(1st Gen Tensor Core). A series of NVIDIA's Tensor Core evolutions following this is an interesting story of its own. NVIDIA's SOTA GPU in 2024, the B100/B200 built with the Blackwell architecture, now carries 5th Gen Tensor Cores along with a 2nd Gen Transformer Engine that supports FP4(how FP4 is achieved is for another post, but the tldr is Microscaling Data Formats).</p>
     <p>Although this paper did not cover optimizations in software for MPT, separate implementations of gradient accumulation, optimizers, and tensor parallelisms are necessary for efficient MPT execution in models with more than a billion parameters. This is also for another post where I will look at advanced mixed precision training techniques(the recent Microsoft's FP8-LM paper and NVIDIA's Microscaling Data Formats).</p>
+
+    <br>
+    <h2>References</h2>
+    <p>[1] Micikevicius et al. 2017. "Mixed Precision Training."</p>
+    <p>[2] Mishra et al. 2017. "WRPN: Wide Reduced-Precision Networks."</p>
+    <p>[3] White Papers for NVIDIA's Volta, Turing, Ampere, Ada Lovelace, Hopper Architecture.</p>
 </main>
 </body>
 </html>
