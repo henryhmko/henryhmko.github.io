@@ -9,46 +9,59 @@
 <body>
     <header>
         <h1>Mixture-of-Experts (MoE) Overview</h1>
+        <span class="date">May 18, 2024</span>
     </header>
     <main>
+        <center><img src="images/MoE_architecture.png" alt="MoE Architecture" width="900" height="auto" style="margin-left:auto; margin-right: auto;"></center>
         <p>
             "[MoE] consists of a number of experts, each a simple feed-forward NN, and a trainable gating network which selects a sparse combination of the experts to process each input (Shazeer, 2017)...[the MoE selects] a potentially different combination of experts at each [token]. The different experts tend to become highly specialized based on syntax and semantics."
         </p>
         <p>
-            Key ideas used in the MoEs are sparsity, parallelism, and meta-learning.
+            Key ideas used in the MoEs are sparsity, parallelism, and meta-learning. <br>
+            <br>
+            Here is a single MoE block and an example gating network inside of it.
         </p>
+        <center><img src="images/MoE_block_and_gating_network.png" alt="MoE Block" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+        <br><br>
         <h2>MoE Benefits:</h2>
-        <h3>Parallelism:</h3>
+        <br>
+        <h3>1. Parallelism</h3>
         <ul>
             <li>Each expert learns to "specialize" in one "type" of data (e.g. Expert 1 focuses on cats while Expert 2 focuses on dogs for a MoE vision classifier).</li>
             <li>This allows for increased throughput as different types of data are concurrently worked on by multiple experts at once.</li>
+            <br>
         </ul>
-        <h3>Efficient Parameter Usage with Sparsity:</h3>
+        <h3>2. Efficient Parameter Usage with Sparsity</h3>
         <ul>
             <li>While dense transformers utilize large portions of their total weights during training & inference, MoE transformers learn to selectively activate subsets of the model weights during training 7 inference.</li>
             <li>This allows light-weight, but powerful models to emerge.</li>
+            <br>
         </ul>
-        <h3>Meta-Learning:</h3>
+        <h3>3. Meta-Learning</h3>
         <ul>
             <li>Classical conditional computation methods often used human-made heuristics for the model to work with, effectively decreasing their abilities to generalize to internet-scale datasets (e.g. most conditional computation vision models were often benchmarked with datasets only up to 600,000 images).</li>
             <li>With MoE transformers, the gating network is jointly trained along with the experts using back-prop, effectively decreasing the bias that may come with human-made heuristics.</li>
             <li>⇒ The question then becomes one of data-quality: "What is good data that provides the most information during training?"</li>
+            <br>
         </ul>
-        <h3>Energy-Efficiency:</h3>
+        <h3>4. Energy-Efficiency</h3>
         <ul>
             <li>Sparsity of MoEs naturally saves energy usage both during training and inference, which decreases model training and upkeep costs along with reducing carbon footprints.</li>
             <li>Decreased number of activated parameters both during training and inference means decreased use of electricity due to less computation.</li>
             <li>GLaM, an early MoE LLM, used only ⅓ energy and ½ FLOPs for inference to be on par with GPT-3.</li>
+            <br>
         </ul>
-        <h2>Misc.</h2>
+        <h2>Miscellaneous:</h2>
         <h3>Balancing of Expert Importance:</h3>
         <ul>
             <li>To prevent converging to a state where only a few experts solve everything, an extra loss term(Limportance) is included to make sure each expert is weighted equally in importance.</li>
+            <br>
         </ul>
         <h3>Preventing Synchronization Overheads:</h3>
         <ul>
             <li>Effective parallelism comes from having balanced loads distributed to each component. If Expert 1 takes in 100 examples while Expert 2 takes only 1, there is a synchronization overhead.</li>
             <li>To prevent this, another loss term(Lload) is added, which reinforces Experts to have approximately equal number of examples.</li>
+        <br>
         </ul>
         <h2>Downsides:</h2>
         <h3>Higher Risk of Training Instability:</h3>
@@ -56,15 +69,17 @@
             <li>Sparsity is a double-edged sword where it theoretically creates many discontinuities that result in NaNs or Infs.</li>
             <li>Early MoE implementations merely skipped weight updates if there were NaNs or Infs(GLaM; Du, 2017) and reverted training back to the previous checkpoint.</li>
             <li>This is another reason why large pre-training datasets were needed.</li>
+        <br>
         </ul>
         <h3>Need Large Batch Sizes:</h3>
         <ul>
-            <li>Hence, large datasets to train.</li>
-            <li>Larger pre-training datasets are needed to cover the sparsity that MoEs bring.</li>
+            <li> Larger batch sizes are needed to cover the sparsity that MoEs bring. <br> As a result, larger pre-training datasets are needed to train.</li>
+        <br>
         </ul>
         <h3>Need Many GPUs:</h3>
         <ul>
             <li>Though they don't have to be hundreds of A100s, MoEs take advantage of high parallelism, which assumes you have access to many GPU devices to split computations across.</li>
+        <br>
         </ul>
         <h2>Closing Thoughts:</h2>
         <h3>Scaling in low-resource environments:</h3>
@@ -79,7 +94,6 @@
             <li>"How can we train a better model with less data? What are the metrics for good data?"</li>
         </ul>
         <br><br>
-        <img src="images/architecture_compare.png" alt="Mixture-of-Experts Image 1" width="600" height="300">
     </main>
 </body>
 </html>
