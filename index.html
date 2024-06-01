@@ -20,16 +20,25 @@
             When done right, I believe you could go far even with limited compute. <br>
             <br>
             <br><br>
+            <br><br>
             <!-- Here's my contact: ko.hyeonmok at berkeley dot edu</ko><ko -->
         </h3>
-        <ul>
-            <li><a href="posts/moe_overview/moe_overview.html">Mixture-of-Experts(MoE) Overview</a></li>
-            <br>
-            <li><a href="posts/mpt/mpt_part1.html">Mixed Precision Training - Part 1</a></li>
-            <br>
-            <li><a href="#">AlphaFold3 Overview</a></li>
-            <!-- Add more article titles as needed -->
-        </ul>
+        <div class="post">
+            <div>
+                <h2 class="post-title"><a href="posts/mpt/mpt_part1.html">Mixed Precision Training - Part 1</a></h2>
+                <p class=""post-description">NVIDIA's latest GPU, the Blackwell series, has taken another leap forward with its support for FP4 representations. But where did this idea of leveraging lower precision formats for efficient ML all start? What are the techniques used to amend underflows/overflows despite using reduced precision formats? This series on Mixed Precision Training explores the origins and evolutions of this approach, starting from the OG Mixed Precision Training paper released way back in 2017.</p>
+            </div>
+            <img class="post-image" src="posts/mpt/images/FP_underflow.png" alt="sample post img">
+        </div>
+        <div class="post">
+            <div>
+                <h2 class="post-title"><a href="posts/moe_overview/moe_overview.html">Mixture of Experts(MoE) Overview</a></h2>
+                <p class=""post-description">Key ideas used in the MoEs are sparsity, parallelism, and meta-learning. This technique has opened doors for scalable model training and has become a standard practice when building modern LLMs. Some examples of LLMs using MoEs include Databrick’s DBRX, Snowflake’s Arctice, xAI’s Grok and the list continues to grow as the technique improves more and more.
+                </p>
+            </div>
+            <img class="post-image" src="posts/moe_overview/images/MoE_block_and_gating_network.png" alt="sample post img">
+        </div>
+        
     </main>
 </body>
 </html>
