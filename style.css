@@ -33,6 +33,13 @@ div.heading {
     font-weight: bold;
     margin-top: 4ch;
 }
+div.profile-text {
+    color: #000000;
+    font-weight: 100;
+    font-size: 18px;
+    text-align: justify;
+    line-height: 2.0;
+}
 /* .header-content h1 {
     margin: 0;
     margin-right: 20px;
@@ -72,7 +79,7 @@ li {
 }
 .profile-image {
     float: right;
-    margin-left: 20px;
+    margin-left: 90px;
     width: 200px;
     height: auto;
 }
