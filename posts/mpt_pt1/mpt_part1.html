@@ -8,7 +8,7 @@
 </head>
 <body>
     <header>
-        <h1>Mixed Precision Training (MPT) - Part 1</h1>
+        <h1>Mixed Precision Training (MPT) - Part 1: Introduction</h1>
         <span class="date">May 27, 2024</span>
         <br><br>
         <a href="../../index.html" class="about-me-link">Home</a>
@@ -16,7 +16,6 @@
         <a href="../../about/about.html" class="about-me-link">About</a>
     </header>
     <main>
-        <!-- <center><img src="images/MoE_architecture.png" alt="MoE Architecture" width="900" height="auto" style="margin-left:auto; margin-right: auto;"></center> -->
         <p>NVIDIA's latest GPU, the Blackwell series, has taken another leap forward with its support for FP4 representations. But where did this idea of leveraging lower precision formats for efficient ML all start? What are the techniques used to amend underflows/overflows despite using reduced precision formats? This series on Mixed Precision Training explores the origins and evolutions of this approach, starting from the OG Mixed Precision Training paper released way back in 2017.</p>
         <p><em>tldr</em>: Normal ML training is done with full precision(FP32). Mixed Precision Training reduces memory requirements to less than 50% by using reduced precision(FP16) for subsets of the model, all without losing model accuracy.</p>
         <br>

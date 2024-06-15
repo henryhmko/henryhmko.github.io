@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mixed Precision Training (MPT) - Part 2</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <link rel="stylesheet" type="text/css" href="../../style.css">
+</head>
+<body>
+    <header>
+        <h1>Mixed Precision Training (MPT) - Part 2: Evolution of FP8</h1>
+        <span class="date">June 15, 2024</span>
+        <br><br>
+        <a href="../../index.html" class="about-me-link">Home</a>
+        &nbsp; &nbsp;
+        <a href="../../about/about.html" class="about-me-link">About</a>
+    </header>
+    <main>
+        <p>In our last post, we saw the jump from FP32 to FP16, but can we go even lower? Let’s dive into the next frontier: FP8. We’ll be deep-diving into two significant papers that made FP8 training possible. The first introduced the hybrid FP8 format and the second refined it into a generalizable IEEE-754 floating point capable of training models as large as GPT-175B with minimal performance loss.</p>
+        <br>
+        <img src="images/fp8_timeline.png" alt="FP8 Timeline" width="1200" height="auto" style="margin-left:auto; margin-right: auto;">
+        <!-- <img src="images/fp8_timeline_new_min.png" alt="FP8 Timeline" width="500" height="auto" style="margin-left:200px; margin-right: auto;"> -->
+        <br>
+    <br>
+
+    <h2>Introduction of FP8 Formats that Use Two Encodings</h2>
+    <p>From ("HFP8 Training & Inference"; Sun et al, 2019, IBM; <a href="#ref1">[1]</a>).</p>
+
+    <p>This paper first introduced the idea of using different formats of FP8 for forward and backward passes. Whereas old FP8 MPT papers were representing all FP8 in 1-5-2 format(1 sign bit, 5 exponent bits, and 2 mantissa bits), this paper proposed to use 1-4-3 for the forward pass while using E5M2 for the backward pass.</p>
+
+    <p>Essentially, tensors during the forward pass needed higher precision while gradient tensors during the backward pass needed larger dynamic ranges. Intuitively, accommodating a larger dynamic range during the backward pass is crucial since the direction of the gradients is more important than its exact magnitude(i.e. more precision) for training to converge.</p>
+    
+    <br>
+    <p>The paper shows two effects of incorporating a new encoding format:</p>
+
+    <h3><span style="font-weight: 1000;">1. 1-4-3 HFP8 represents FP32 better than previous 1-5-2 FP8</span></h3>
+    <center><img src="images/HFP8_fig2.png" alt="hfp8 fig 2" width="900" height="auto" style="margin-left: 0px; margin-right: auto;"></center>
+    <center><img src="images/fig2_caption.png" alt="hfp8 fig 2 caption" width="700" height="auto" style="margin-left: 0px; margin-right: auto;"></center>
+    <br>
+    <p>The figure shows that using the 1-4-3 encoding scheme leads to a lower mismatch probability, meaning that 1-4-3 FP8 is a better representation of the FP32 baseline than the previous 1-5-2 FP8 scheme.</p>
+
+    <p>However, it is noticeable in the weight quantizations figure(right) that using 1-4-3 HFP8 without bias leads to errors especially in the last layers. This is largely due to underflow of FP8 and to mitigate this the authors proposed using a fixed exponent bias of 4. There are indeed issues with imposing a hard-coded exponent bias, but these concerns will be covered later in the post in the next paper.</p>
+    <br>
+
+    <h3><span style="font-weight: 1000;">2. Smoother Loss Landscapes with 1-4-3 HFP8</span></h3>
+    <center><img src="images/HFP8_fig3.png" alt="hfp8 fig 3" width="800" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    <center><img src="images/fig3_caption.png" alt="hfp8 fig 3 caption" width="700" height="auto" style="margin-left: 0px; margin-right: auto;"></center>
+    <br>
+
+    <p>Plots for 1-5-2 FP8(b & e) show a "rougher" loss landscape that is more difficult to optimize over than the 1-4-3 HFP8(c & f).</p>
+
+    <p><em>Fine Print</em>: These loss visualizations are more for developing intuition on possible effects of HFP8 on optimization. Visualizing high dimensional landscapes can be misleading as the plots depend on which two directions(if it's a 2D plot) you sample from a high dimensional space.</p>
+    <br>
+
+    <h3>Q. Does this extend to other models?</h3>
+    <center><img src="images/HFP8_fig4.png" alt="hfp8 fig 4" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    <center><img src="images/fig4_caption.png" alt="hfp8 fig 4 caption" width="700" height="auto" style="margin-left: 50px; margin-right: auto;"></center>
+
+    <p>The models they tested with seemed to show that HFP8 is generalizable, but in modern day ML we do not know if things work for sure until we test it at a large scale.</p>
+
+    <p>And the next paper went on and tested HFP8 at scale while fixing its limitations.</p>
+    <br>
+
+    <h2>Enter the New, Generalizable FP8 Format</h2>
+    <p>From ("FP8 Formats for DL"; Micikevicius et al, 2022; NVIDIA, Arm, Intel; <a href="#ref2">[2]</a>).</p>
+    
+    <p>The joint research team between NVIDIA, Arm, and Intel went and modified and tested the two-encoding-scheme FP8 at scale, applying it to models as large as GPT 175B. Let's first look at the results below.</p>
+    <center><img src="images/table4.png" alt="fp8 table 4" width="400" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+
+    <p>&nbsp;&nbsp; &nbsp;&nbsp; <em><span style="font-weight: 1000;">Note:</span></em> The baselines in this paper are models trained in FP16/BF16, not FP32.</p>
+    <p>Benchmarks can't be trusted as much anymore, but there's no denying that these are impressive results. I doubt FP8 is capable of replacing FP16, but this opens up a lot of potential for places needing fast-iteration with less compute. I'll return to this thought later, but for now let's dive into how the new FP8 format is different.</p>
+    <br>
+    <center><img src="images/new_fp8.png" alt="new fp8 scheme" width="600" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    <br>
+    <p>Here are the key points of the modified FP8 format from the previous HFP8 format:</p>
+
+    <h3><li>Difference in Special Value Representations</h3></li>
+    <center><img src="images/table1_fp8.png" alt="new fp8 scheme details" width="600" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+
+    <p>This is a key characteristic of the new FP8 representation. While the E5M2 format follows the IEEE-754 conventions for representing Infs and NaNs, the E4M3 does not. Specifically, E4M3s cannot represent infinities anymore. This frees up multiple bit patterns available to represent other normal values. <em><span style="font-weight: 700;">Essentially, the new E4M3 format extends the dynamic range in exchange for not being able to represent infinities.</em></span></p>
+
+    <p>This is a big change and I’m curious to see peculiar training behaviors that might arise due to this. The odd E4M3 format will only be used during the forward pass, so we’ll have to be careful with log-based loss functions where infinities have served well. Other actions such as taking softmax or attention masking with infinities are other minor issues to consider.</p>
+    <br>
+
+    <h3><li>Exponent Bias for E4M3 and E5M2 are fixed to 7 and 15, respectively</h3></li>
+
+    <p>Recall that the previous 1-4-3 HFP8's representation fixed their exponent bias to 4. This did not adhere to the conventions of IEEE-754 Floating Points. The new FP8, on the other hand, adheres to the IEEE-754 convention by setting a fixed exponent bias of \(2^{\text{e} - 1} - 1\), where \(\text{e}\) is the number of exponent bits. This results exponent biases for E4M3 and E5M2 to be 7 and 15, respectively. This makes conversion between other IEEE-754 floating points easy.</p>
+    <br>
+
+    <h3><li>Same two-encoding scheme of 1-4-3 FP8 for forward and 1-5-2 FP8 for backward is used</h3></li>
+
+    <p>They also renamed 1-4-3 FP8 to <em>E4M3</em> and 1-5-2 FP8 to <em>E5M2</em>. This naming scheme has become the standard that's used in NVIDIA Transformer Engine docs<a href="#ref3">[3]</a> and Open Compute Project docs<a href="#ref4">[4]</a>.</p>
+    <br>
+
+    <h2>Benefits of Following IEEE-754 Floating Point(FP) Convention</h2>
+
+    <p>Recall that the HFP8 formats did not follow the IEEE-754 FP conventions by using a fixed exponent bias of 4 and not clearly stating how they represented special values. This brings two problems.</p>
+
+    <ol>
+        <li><span style="font-weight: 800;">Complicated Conversions</span><br>
+        Though it is doable, conversions are complicated and create room for error.</li>
+        <li><span style="font-weight: 800;">Cannot use algorithms built for IEEE-754 FPs</span><br>
+        Comparing and sorting IEEE-754 FPs is done efficiently using assumptions of IEEE FP conventions, such as assuming NaNs are represented by all exponent bits set to 1 and a non-zero mantissa.</li>
+    </ol>
+
+    <p>The new FP8 format that adheres to IEEE-754 FP conventions allow previous software for IEEE-754 FPs to be used on FP8s, at least the E5M2 formats though not applicable to E4M3 formats.</p>
+    <br>
+
+    <h3>Q. If exponent biases are that large, how do they deal with underflows or overflows?</h3>
+
+    <p>Exponent bits of a floating point representation choose how large the "window" of representable range can be<a href="#ref5">[5]</a>. We can only represent numbers that fit inside this "window" and there are two ways to do this.</p>
+
+    <p>One is moving the window itself. This can be done by changing the exponent bias, which was used in the HFP8 paper<a href="#ref1">[1]</a> by setting an exponent bias of 4. Let's see a visual example below. Assume we have a hypothetical scenario where the distribution of gradient values are as below. First, let's see how well an exponent bias set to 0 represents the gradient values.</p>
+    <br>
+    <center><img src="images/exp_bias_1.png" alt="exp bias 1" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    
+    <p>We see a problem where a good portion of gradient values are lost as they are too small. But here's the change when the exponent bias is set to 4 instead of 0.</p>
+    <br>
+    <center><img src="images/exp_bias_2.png" alt="exp bias 2" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    
+    <p>Notice how the window size remains the same, but it was shifted to better accommodate values appearing in higher frequencies. Here's the combined visualization in one plot.</p>
+    <br>
+    <center><img src="images/exp_bias_3.png" alt="exp bias 3" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    
+    <p>One caveat of this method is that we need to analyze the gradient statistics of the model during training and adjust the exponent bias accordingly. Some models may prefer one exponent bias while other models may prefer a different exponent bias. Inventing floating points with different exponent biases every time you train a different model is a pain as it creates a lot of overhead converting between one another. You can see how this method is not a generalizable solution. The next method, however, is a lot simpler.</p>
+    
+    <p>The other way is to keep the window as it is and instead move the numbers to fit this window. We do this by scaling the numbers with a constant. Let's see a visualization below.</p>
+    <br>
+    <center><img src="images/loss_scale.png" alt="loss scale" width="1000" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    <p>This is the approach the new FP8 uses. We rely on tensor-scaling to make sure all the numbers (ideally) fit within the window while keeping the window fixed. The only caveat is that the window is fixed with an exponent bias of 7 for E4M3 and 15 for E5M2.</p>
+
+    <p><em><span style="font-weight: 1000;">Note:</span></em> The idea behind tensor-scaling is similar to loss-scaling. Whereas loss-scaling chooses one scalar to multiply the loss tensor by, tensor-scaling keeps one scalar per tensor to multiply by. Though this is a lot of overhead, it accommodates the wide distribution of ranges that each tensor carries. For example, elements in one tensor may be close to overflowing on the negative end while elements in another tensor may be close to overflowing in the positive end. It is not possible to accommodate both tensors with a single scalar.</p>
+    <br>
+
+    <h2>Easier 8-Bit Inference with FP8</h2>
+
+    <p>The final benefit of FP8 format is a rather obvious one: inference in 8-bit is much easier.</p>
+
+    <p>Normally, models trained on FP16/BF16 will have to incorporate quantization-aware training or go through post-training quantization(PTQ). This step could be skipped if, of course, training is done in FP8 from the start.</p>
+
+    <p>Micikevicius et al<a href="#ref2">[2]</a> also show that training models in FP8 results in higher accuracy during inference than models that go through PTQ as shown below.</p>
+    <br>
+    <center><img src="images/table_5.png" alt="table 5" width="800" height="auto" style="margin-left:auto; margin-right: auto;"></center>
+    <br>
+
+    <h2>Closing Thoughts</h2>
+    <p>More than FP8's potential for efficient training and inference, I believe its true benefits lie in bringing a new paradigm in approaching ML problems.</p>
+    <p>The more we advance with reliable reduced precision, we're able to reconsider approaches that we've historically dismissed as too compute-expensive. Evolutionary algorithms, for example, is one such approach that could benefit largely from this.</p>
+    <p>FP8 will be at the heart of efficient scaling and new approaches which leverage its quirks will be fused with existing methods to advance the frontiers of what is possible.</p>
+    <!-- <p>Not only is this hopeful advancements for places with less compute, it's hopeful for large companies to try out different approachesto problems. Changing the way we think about problems.</p> -->
+    <!-- <p>The more important point is that it should change the way we think about problems. </p> -->
+    <!-- <p>Of course, a lot more testing of FP8 formats is needed to fully understand how reliable it is, but it’s definitely promising for fast iteration of experiments while using as little compute as possible. </p> -->
+    <br>
+
+    <h2>References</h2>
+    <p id="ref1">[1] <a href="https://proceedings.neurips.cc/paper_files/paper/2019/file/65fc9fb4897a89789352e211ca2d398f-Paper.pdf" target="_blank">Sun et al. 2019. "Hybrid 8-bit Floating Point (HFP8) Training and Inference for Deep Neural Networks."</a></p>
+    <p id="ref2">[2] <a href="https://arxiv.org/abs/2209.05433" target="_blank"> Micikevicius et al. 2022. "FP8 Formats for Deep Learning."</a></p>
+    <p id="ref3">[3] <a href="https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/index.html" target="_blank"> NVIDIA Transformer Engine Documentation.</a></p>
+    <p id="ref4">[4] <a href="https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1" target="_blank"> Open Compute Project 8-bit Floating Point Specification.</a></p>
+    <p id="ref5">[5] <a href="https://fabiensanglard.net/floating_point_visually_explained/" target="_blank"> Fabien Sanglard, Floating Point Visually Explained.</a></p>
+
+</main>

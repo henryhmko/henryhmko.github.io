@@ -32,10 +32,19 @@
         </div>
         <div class="post">
             <div>
-                <h2 class="post-title"><a href="posts/mpt/mpt_part1.html">Mixed Precision Training - Part 1</a></h2>
+                <h2 class="post-title"><a href="posts/mpt_pt2/mpt_pt2.html">Mixed Precision Training - Part 2: Evolution of FP8</a></h2>
+                <p class=""post-description">In our last post, we saw the jump from FP32 to FP16, but can we go even lower? Let’s dive into the next frontier: FP8. We’ll be deep-diving into two significant papers that made FP8 training possible. The first introduced the hybrid FP8 format and the second refined it into a generalizable IEEE-754 floating point capable of training models as large as GPT-175B with minimal performance loss.
+                </p>
+            </div>
+            <img class="post-image" src="posts/mpt_pt2/images/thumbnail.png" alt="sample post img" style="width: 250px; height: auto;">
+        </div>
+        <br>
+        <div class="post">
+            <div>
+                <h2 class="post-title"><a href="posts/mpt_pt1/mpt_part1.html">Mixed Precision Training - Part 1: Introduction</a></h2>
                 <p class=""post-description">NVIDIA's latest GPU, the Blackwell series, has taken another leap forward with its support for FP4 representations. But where did this idea of leveraging lower precision formats for efficient ML all start? What are the techniques used to amend underflows/overflows despite using reduced precision formats? This series on Mixed Precision Training explores the origins and evolutions of this approach, starting from the OG Mixed Precision Training paper released way back in 2017.</p>
             </div>
-            <img class="post-image" src="posts/mpt/images/FP_underflow.png" alt="sample post img">
+            <img class="post-image" src="posts/mpt_pt1/images/FP_underflow.png" alt="sample post img" style="width: auto; height: 200px;">
         </div>
         <div class="post">
             <div>
@@ -43,7 +52,7 @@
                 <p class=""post-description">Key ideas used in the MoEs are sparsity, parallelism, and meta-learning. This technique has opened doors for scalable model training and has become a standard practice when building modern LLMs. Some examples of LLMs using MoEs include Databrick’s DBRX, Snowflake’s Arctice, xAI’s Grok and the list continues to grow as the technique improves more and more.
                 </p>
             </div>
-            <img class="post-image" src="posts/moe_overview/images/MoE_block_and_gating_network.png" alt="sample post img">
+            <img class="post-image" src="posts/moe_overview/images/MoE_block_and_gating_network.png" alt="sample post img" style="width: auto; height: 250px;">
         </div>
         
     </main>
