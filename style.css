@@ -151,3 +151,7 @@ a::after {
 .bold-extra-bold {
     font-weight: 1000;
 }
+::selection {
+    background-color: #fff2cf;
+    color: #000000;
+}
