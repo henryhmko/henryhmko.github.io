@@ -96,7 +96,7 @@ li {
 .post-description {
     font-size: 16px;
     /* color: #666; */
-    color: #413E3E;
+    /* color: #413E3E; */
 }
 .post-image {
     margin-left: 20px;
@@ -155,3 +155,9 @@ a::after {
     background-color: #fff2cf;
     color: #000000;
 }
+.math-indent {
+    display: inline-block;
+    margin-left: 13em;
+}
+
+
