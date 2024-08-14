@@ -69,6 +69,9 @@ ul {
 li {
     margin-bottom: 10px;
 }
+/* p {
+    font-size: 20px; 
+} */
 .about-me-link {
     position: absolute;
     /* top:20px; */
@@ -158,6 +161,26 @@ a::after {
 .math-indent {
     display: inline-block;
     margin-left: 13em;
+}
+code, pre code {
+    font-family: 'Fira Code', 'Courier New', monospace;
+    /* font-feature-settings: "liga" 1;
+    font-variant-ligatures: normal; */
+}
+/* code:not([class*="language-"]) {
+    background-color: #000;
+    color: #fff;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+} */
+code:not([class*="language-"]) {
+    background-color: #fff2cf; 
+    color: #000000; 
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+    border: 1px solid #ff6800; 
 }
 
 

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navigating NVIDIA Nsight Systems for Efficient Profiling</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+    <link rel="stylesheet" type="text/css" href="../../style.css">
+</head>
+<body>
+    <header>
+        <h1>Navigating NVIDIA Nsight Systems for Efficient Profiling</h1>
+        <span class="date">August 14, 2024</span>
+        <br><br>
+        <a href="../../index.html" class="about-me-link">Home</a>
+        &nbsp; &nbsp;
+        <a href="../../about/about.html" class="about-me-link">About Me</a>
+        &nbsp; &nbsp;
+        <a href="../../non-technical/non-technical.html" class="about-me-link">non-technical</a>
+    </header>
+    <main>
+        <p>I had my first experience with optimization this summer by making my lab's codebase for protein structure estimation 3.5x faster(not by lowering precision of course). And Nsight Systems was at the core of making that possible.</p>
+
+        <p>This guide is meant to be a practical tutorial on using Nsight Systems. Nsight Systems has become a core part of my work process that I use not only to profile code, but also to understand code yet the first time I used this tool I was lost on how to use it.</p>
+
+        <br>
+        <h2>Q. Why Nsight Systems over other profilers?</h2>
+
+        <p>There are many amazing profilers out there and it's up to personal preference, but here's my reasons for picking Nsight Systems over other famous ones like the PyTorch Profiler.</p>
+        <ol>
+            <h3><li><strong>Non-Intrusive</strong></li></h3>
+                <ul>
+                    <li>No need to change the original code for profiling purposes.</li>
+                    <li>Just run <code>nsys profile python train.py</code></li>
+                </ul>
+            </li>
+            <h3><li><strong>Less Overhead</strong></li></h3>
+                <ul>
+                    <li>To start viewing your profiled results, you just have to run the profiling command, download output file, and open in Nsight Systems.</li>
+                    <li>In PyTorch Profiler, for example, you'd have to set up TensorBoard or a chrome trace to get a visualizer going.</li>
+                </ul>
+            </li>
+          <h3><li><strong>Granular Trace Information</strong></li></h3>
+                <ul>
+                    <li>Shows both GPU & CPU usage, CUDA API Calls, and memory usage</li>
+                    <li>Shows CUDA kernel calls with the grid sizes and block sizes for corresponding kernels</li>
+                </ul>
+            </li>
+            <h3><li><strong>Framework Agnostic</strong></li></h3>
+                <ul>
+                    <li>(disclaimer: Given that you have a nvidia gpu)</li>
+                    <li>Can profile any frameworks you use(e.g. JAX), while PyTorch Profiler is limited to PyTorch</li>
+                </ul>
+            </li>
+        </ol>
+
+        <br>
+        <p>If I have convinced you to use Nsight Systems, let's dive into a practical guide on how to use this tool.</p>
+
+        <p>I always learn best when I see concrete examples I can follow, so I will walk you through an example case of using Nsight Systems on <a href="https://github.com/karpathy/nanoGPT">Karpathy's nanoGPT repo</a>. Our task is to use this tool to profile and identify potential opportunities for optimization.</p>
+
+        <img src="images/nanogpt_cover.jpg" alt="nanogpt cover" width="900" height="auto" style="margin-left:auto; margin-right: auto;">
+
+        <br><br><br>
+        <h2>Part 1: Profiling</h2>
+
+        <p>Nsight systems profiling command is extremely simple:</p>
+        &nbsp;&nbsp; &nbsp;&nbsp;<code>nsys profile python [INPUT_FILENAME]</code>
+        <p>That's it!</p>
+
+        <p>But don't run this just yet, we have to add some flags for making the most out of our profiling:</p>
+        <ol>
+            <li><code>--trace=cuda,nvtx,osrt</code>
+                <ul>
+                    <li>Here's what each option captures:</li>
+                    <li><code>cuda</code>: CUDA API Calls/CUDA kernels information</li>
+                    <li><code>nvtx</code>(NVIDIA Tools Extension): Custom annotations which show up in the visualizer</li>
+                    <li><code>osrt</code>(Operations Systems Runtime): Any communications with hardware, multi-threading synchronizations, and kernel schedulers</li>
+                </ul>
+            </li>
+            <li><code>-o [OUTPUT_FILENAME]</code>
+                <ul>
+                    <li>Custom output filename</li>
+                </ul>
+            </li>
+        </ol>
+
+        <p>Here's the final template:</p>
+        &nbsp;&nbsp; &nbsp;&nbsp;<code>nsys profile --trace=cuda,nvtx,osrt -o [OUTPUT_FILENAME] python [INPUT_FILENAME]</code>
+
+        <p>Let's tweak this to fit out nanoGPT <code>train.py</code>:</p>
+        &nbsp;&nbsp; &nbsp;&nbsp;<code>nsys profile --trace=cuda,nvtx,osrt -o nanoGPT_prof python train.py config/train_shakespeare_char.py</code>
+
+        <p>&nbsp;&nbsp; &nbsp;&nbsp;<em>Note</em>: You can stop profiling anytime with <code>^c</code>.</p>
+
+        <br>
+        <h2>Part 2: Understanding Nsight Systems Basics</h2>
+
+        <p>After you're done with profiling <code>nsys</code> has generated me <code>nanoGPT_prof.nsys-rep</code>. Let's open this up in NVIDIA Nsight Systems.</p>
+
+        <img src="images/nanogpt_baseline.png" alt="Nsight Systems Baseline" width="1000" height="auto" style="margin-left:auto; margin-right: auto;">
+
+        <p>A lot of information just popped up in front of us. Let's break it down by each row.</p>
+
+        <img src="images/nanogpt_baseline_annotated.png" alt="Nsight Systems Baseline Annotated" width="1000" height="auto" style="margin-left:auto; margin-right: auto;">
+
+        <ul>
+            <li><code>CUDA HW</code>: Shows GPU Utilization Rate</li>
+            <li><code>python</code>(Names will vary): Shows CPU Utilization Rate</li>
+            <li><code>OS runtime libraries</code>: Especially useful for viewing thread activities(e.g. synchronizations, semaphores, etc)</li>
+            <li><code>CUDA API</code>: Shows CUDA API Calls</li>
+        </ul>
+
+        <p>If you want to see detailed information about CUDA Kernel calls, click the <code>CUDA HW</code> dropdown and see the <code>Kernels</code> row. It contains information about grid sizes, block sizes, registers per thread, and such which is useful for calculating the occupancy of SMs.</p>
+
+        <img src="images/nanoGPT_baseline_kernel.png" alt="Nsight Systems Kernel Details" width="1000" height="auto" style="margin-left:auto; margin-right: auto;">
+
+        <br><br><br>
+        <h2>Part 3: Using NVTX to Add Annotations to Your Code</h2>
+
+        <p>A profiler isn't complete unless we can map which parts in the trace belong to the which parts in our code. We can use <code>nvtx.annotate</code> to accomplish this.</p>
+
+        <p>I said earlier how Nsight Systems is non-intrusive, but this is not true if we want to unlock the custom annotating feature(sorry!) We need to put the parts in our interest within the loop of <br> <code>with nvtx.annotate("YOUR_COMMENT_HERE")</code>. Let's see an example below of a simple training run with minibatches:</p>
+
+        <pre class="line-numbers"><code class="language-python">import nvtx
+...
+with nvtx.annotate("training"): # add nvtx annotations like this
+  for epoch in range(num_epochs):
+    ...
+    with nvtx.annotate("single epoch training"):
+      for batch_idx, (data, targets) in enumerate(train_loader):
+        ...
+        with nvtx.annotate("forward"):
+          outputs = model(data)
+		
+		with nvtx.annotate("calculate loss"):
+		  loss = criterion(outputs, targets)
+        ...</code></pre>
+
+        <br>
+        <p>I've added such NVTX annotations for our nanoGPT code and re-ran the profiling. Here is our updated result.</p>
+        <br>
+
+        <img src="images/nanogpt_commented_compiled.png" alt="Nsight Systems with NVTX Annotations" width="1000" height="auto" style="margin-left:auto; margin-right: auto;">
+
+        <p>We now see our annotations showing up in blue in the <code>NVTX</code> row. This is great! We can now map the code with the trace much easily.<br><br><br></p>
+
+        <h2>Q. Wait, why isn't our <code>forward</code> and <code>backward</code> above not using any GPUs?</h2>
+
+        <p>When I first got the profiled results, I was confused on why the first pass of <code>forward</code> and <code>backward</code> calls were not utilizing the GPU and why they were taking so long. I thought it was a small mistake on my end or with the code.</p>
+
+        <p>When I went and did some digging, I realized this is a property of <code>torch.compile</code>! <code>torch.compile</code> will compile the model into optimized kernels as it executes, so naturally it will take much longer during the first run than the rest.</p>
+
+        <p>In fact, here is demo run comparing the speed of <code>eager</code> mode vs <code>torch.compile</code> from the PyTorch <a href="https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html#demonstrating-speedups">docs</a>:</p>
+
+        <pre><code class="language-c">eager train time 0: 0.21844583129882814
+eager train time 1: 0.04933529663085937
+eager train time 2: 0.04745318222045898
+eager train time 3: 0.04743577575683594
+eager train time 4: 0.04739583969116211
+eager train time 5: 0.04778604888916015
+eager train time 6: 0.04729548645019531
+eager train time 7: 0.04731391906738281
+eager train time 8: 0.047341567993164066
+eager train time 9: 0.04735078430175781
+~~~~~~~~~~
+compile train time 0: 227.8810625          //<- first run takes longest
+compile train time 1: 9.108693359375       //<- second run takes long too
+compile train time 2: 0.027546623229980468 //<- from third run and onwards it's ~half the time of eager mode
+compile train time 3: 0.02345062446594238
+compile train time 4: 0.02182655906677246
+compile train time 5: 0.021774335861206053
+compile train time 6: 0.021820415496826173
+compile train time 7: 0.02229145622253418
+compile train time 8: 0.021850112915039063
+compile train time 9: 0.021827583312988282
+~~~~~~~~~~
+(train) eager median: 0.047415807723999025, compile median: 0.02207078456878662, speedup: 2.1483517079431937x
+~~~~~~~~~~</code></pre>
+
+        <p>Whereas the classic <code>eager</code> mode outputs CUDA kernels, <code>torch.compile</code> outputs triton kernels, which is why we see many triton kernel launches in our Nsight Systems too.<br><br></p>
+
+        &nbsp;&nbsp; &nbsp;&nbsp;<img src="images/triton_kernel_call.png" alt="Triton Kernels in Nsight Systems" width="500" height="auto" style="margin-left:auto; margin-right: auto;">
+
+        <br><br>
+        <p><code>torch.compile</code> is still a new, evolving feature in PyTorch. And given the complexity of creating a general compiler for optimizing all sorts of models across different architectures, it may exhibit unexpected behavior as of now. If you're interested in using it, take a look at this <a href="https://docs.google.com/document/d/1y5CRfMLdwEoF1nTk9q8qEu1mgMUuUtvhklPKJ2emLU8/edit">guide</a> that people are building.<br><br></p>
+
+        <h2>Part 4: How Profiles Help You Understand Your Code</h2>
+
+        <p>Diving into <code>torch.compile</code> is just one example of how profiling helps you understand what goes on under the hood in your code. Details I would have overlooked get revealed while exploring the profiled results. Here's a list of cases on how it helps me:</p>
+
+        <ol>
+            <h3><li><strong>Practice Building Intuition on Code Performance</strong></h3>
+                <ul>
+                    <li>Some parts of the code I thought would take a long time end up taking much less, and vice versa. Having profiles ready gives me a structured setting where I can practice reducing this discrepancy.</li>
+                </ul>
+            </li>
+            <h3><li><strong>Maximizing Time Spent Writing Effective Solutions</strong></h3>
+                <ul>
+                    <li>Optimization is most effective when you choose the right part to optimize. And profiling helps you set priorities on how you should spend your time to maximize results.</li>
+                </ul>
+            </li>
+            <h3><li><strong>Understanding code flow through visualization</strong></h3>
+                <ul>
+                    <li>Navigating large codebases take much less time.</li>
+                    <li>You create an internal representation of realizing which parts are more important than others.</li>
+                </ul>
+            </li>
+        </ol>
+        <br>
+
+      <h2>Closing Thoughts</h2>
+      <p>After profiling, however, is where the real work starts. You should first identify which category of bottleneck your program is facing out of these:</p>
+      <p>&nbsp;&nbsp; &nbsp;&nbsp; 1. GPU Compute Bound</p>
+      <p>&nbsp;&nbsp; &nbsp;&nbsp; 2. CUDA API Bound</p>
+      <p>&nbsp;&nbsp; &nbsp;&nbsp; 3. Synchronization Bound</p>
+      <p>&nbsp;&nbsp; &nbsp;&nbsp; 4. CPU Compute Bound</p>
+      <p>Here's an <a href="https://paulbridger.com/posts/nsight-systems-systematic-optimization/">excellent guide</a> by Paul Bridger that walks you through this. It includes potential approaches you should take depending on your bottleneck type as well.</p>
+      <p>My lab's codebase was suffering from a CUDA API Bound due to inefficient batching. I originally joined to work in modeling BioML models, but optimizing it was much more fun and opened up a whole new world to me.</p>
+      <p>Thinking about how to use GPUs better led me to GPU Programming at first, and now more towards the systems side of ML. Read more about my shift here if you're interested!</p>
+      <br>
+
+    <h2>References</h2>
+    <p id="ref1">[1] <a href="https://github.com/karpathy/nanoGPT" target="_blank">Andrej Karpathy, nanoGPT Github Repo</a></p>
+    <p id="ref2">[2] <a href="https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html#demonstrating-speedups" target="_blank"> PyTorch torch.compile Docs</a></p>
+    <p id="ref3">[3] <a href="https://paulbridger.com/posts/nsight-systems-systematic-optimization/" target="_blank">Paul Bridger, Solving Machine Learning Performance Anti-Patterns: a Systematic Approach</a></p>
+    </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>
