@@ -57,7 +57,7 @@ constexpr int NUM_THREADS = 100;  // number of threads
 
 __global__ void addTenKernel(const float *a, float *out) {
   int local_x = threadIdx.x;      // assign one thread
-  out[local_x] = a[local_x] + 10; //take one element from a, add 10, and assign to out
+  out[local_x] = a[local_x] + 10; // take one element from a, add 10, and assign to out
 }</code></pre>
 
         <p>That was simple! No need for a for-loop or anything like that since the SIMT model lets us map the same instruction to every thread.</p>
@@ -79,7 +79,7 @@ constexpr int NUM_THREADS = 100; // number of threads
 
 __global__ void q2_vecadd_kernel(const float *a, float *out) {
   int local_x = threadIdx.x;                 // assign one thread
-  out[local_x] = a[local_x] + b[local_x]     // do vec add
+  out[local_x] = a[local_x] + b[local_x];     // do vec add
 }</code></pre>
 
         <p>Easy!</p>
@@ -101,7 +101,7 @@ constexpr int NUM_THREADS = 500; // we have more threads than positions
 
 __global__ void q3_solution_kernel(const float *a, float *out, int size) {
   int local_x = threadIdx.x;     // assign one thread
-  if local_x < size:             // check if curr thread is within vector size
+  if (local_x < size):             // check if curr thread is within vector size
     out[local_x] = a[local_x] + 10;
 }</code></pre>
 
@@ -226,8 +226,7 @@ __global__ void q4_solution_kernel(const float *A, float *out, int width) {
         <p>To recap, our inputs are vectors while our output is a matrix. Let's draw out a diagram below to see what this looks like.</p>
 
         <p>(insert exaclidraw diagram of what broadcast addition is; sth like below)</p>
-        <img src="/api/placeholder/200/150" alt="Broadcast Addition Diagram">
-        <p>(a SHOULD BE A COL VECTOR; b SHOULD BE ROW VECTOR)</p>
+        <img src="images/puzzle_5_vis.png" alt="Broadcasting vis." width="auto" height="300" style="margin-left:auto; margin-right: auto;">        
 
         <pre><code class="language-cpp">// We have more threads than positions
 // a + b where a.shape=[N,1], b.shape=[1,N]
@@ -240,7 +239,7 @@ __global__ void q5_solution_kernel(const float *a, const float *b, float *out, c
   if (row < n && col < n) {
     // assume a.shape = [N,1] (column vector)
     //        b.shape = [1,N] (row vector)
-    out[row * n + col] = a[row] + b[col]
+    out[row * n + col] = a[row] + b[col];
   }
 }</code></pre>
 
@@ -263,11 +262,14 @@ __global__ void q5_solution_kernel(const float *a, const float *b, float *out, c
 
     <p>Notice how we have fewer threads per block than the input vector. This indicates that we should use multiple blocks to launch enough threads to cover the vector.</p>
 
-    <img src="/api/placeholder/200/150" alt="Multiple blocks simulating multiple threads">
+    <img src="images/multiple_blocks.png" alt="Using multiple blocks" width="auto" height="450" style="margin-left:auto; margin-right: auto;">        
+    <br>
 
-    <p>To tackle using multiple blocks, we need a way to calculate the global thread index. It is `cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x`. Let's see why.</p>
+    <p>To tackle using multiple blocks, we need a way to calculate the global thread index. It is <br><code>int i = blockIdx.x * blockDim.x + threadIdx.x</code>. Let's see why.</p>
 
-    <img src="/api/placeholder/400/300" alt="Calculating global thread indexes">
+    <br>
+    <img src="images/global_thread_index.png" alt="global thread indexing" width="auto" height="280" style="margin-left:auto; margin-right: auto;">        
+    <br><br>
 
     <p>Let's apply this to solve our next puzzle. Let's take a look at the code below.</p>
 
@@ -307,9 +309,9 @@ __global__ void q6_solution_kernel(const float *a, float *out, const int n) {
 
     <p>Remember that when working with 2D input data we have to write kernels that uses both `x` and `y` dimensions. This means we need to calculate the global thread indexes for both directions while taking into account that our blocks are also 2D.</p>
 
-    <p>Visuals clarify things a lot when writing kernels. Let's see one below.</p>
+    <p>Visuals clarify things a lot when writing kernels. Let's see an example where <code>A.shape = [7,7]</code> and <br><code>BlockDim = (3,3,1)</code>.</p>
 
-    <img src="/api/placeholder/200/150" alt="2D global thread index calculation">
+    <img src="images/2d_blocks.png" alt="2D blocking" width="auto" height="500" style="margin-left:auto; margin-right: auto;">        
 
     <p>Let's see what this would look like in code.</p>
 
@@ -338,8 +340,8 @@ __global__ void q7_solution_kernel(const float *A, float *out, const int width) 
     <p>I ran a naive matmul vs shared memory mamtul with square matrixes of size `[4096,4096]` and block size `(16,16)` on my 2080ti. Here are the results:</p>
 
     <ul>
-        <li>Naive matmul: `155.375 ms`</li>
-        <li>Shared memory matmul: `96.0123 ms`</li>
+        <li>Naive matmul: <code>155.375 ms</code></li>
+        <li>Shared memory matmul: <code>96.0123 ms</code></li>
     </ul>
 
     <p>Shared memory matmul is around 40% faster, with this effect to only expand with larger matrices. It's tempting to throw in shared memory everywhere after hearing this speedup, but it shouldn't be used everywhere.</p>
@@ -358,7 +360,7 @@ __global__ void q7_solution_kernel(const float *A, float *out, const int width) 
           <h4><span style="font-weight: 800;">Threads Sharing Data</span></h4>
             <ul>
                 <li>By loading data to shared memory, threads can access data that were fetched by other threads quickly.</li>
-                <li>e.g. Parallel Reduction, such as Prefix Sum(Puzzle 12)</li>
+                <li>e.g. Parallel Reduction, such as Prefix Sum</li>
             </ul>
         </li>
         <li>
@@ -366,7 +368,7 @@ __global__ void q7_solution_kernel(const float *A, float *out, const int width) 
             <ul>
                 <li>Non-coalesced or strided memory accesses slow down kernels, but they are required for some applications(e.g. matrix transpose).</li>
                 <li>By storing subsequent subsets("tile") of the data in shared memory, we can run non-coalesced memory accesses very quickly.</li>
-                <li>e.g. Matrix Multiply(Puzzle 14)</li>
+                <li>e.g. Matrix Multiply</li>
             </ul>
         </li>
     </ol>
@@ -387,7 +389,7 @@ __global__ void q7_solution_kernel(const float *A, float *out, const int width) 
     <p>Let's dive into the code.</p>
 
     <pre><code class="language-cpp">constexpr int N = 10000;
-constexpr int BLOCK_SIZE = 256
+constexpr int BLOCK_SIZE = 256;
 
 __global__ void q8_solution_kernel(const float *a, float *out, const int n) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -407,14 +409,14 @@ __global__ void q8_solution_kernel(const float *a, float *out, const int n) {
   }
 }</code></pre>
 
-<h3><span style="font-weight: 1000;">Q. What is `__syncthreads()`?</span></h3>
+<h3><span style="font-weight: 1000;">Q. What is <code>__syncthreads()</code>?</span></h3>
     <ul>
         <li>This is a barrier to make sure all threads finished instructions up to this point before moving further.</li>
-        <li>Since we are dealing with parallel programs, we might have a situation where `Thread 0` may have finished copying to `shared` but `Thread 1` is still copying to `shared`.</li>
+        <li>Since we are dealing with parallel programs, we might have a situation where <code>thread 0</code> may have finished copying to <code>shared</code> but <code>Thread 1</code> is still copying to <code>shared</code>.</li>
         <li>Without having barriers, subsequent code may run into undefined behavior by fetching elements in memory that are not written into yet.</li>
     </ul>
 
-    <p>The most important line in the code snippet above is `__syncthreads()`. Make sure you always include thread barriers whenever you read or write data that will be used later in the code.</p>
+    <p>The most important line in the code snippet above is <code>__syncthreads()</code>. Make sure you always include thread barriers whenever you read or write data that will be used later in the code.</p>
 
     <p>Now let's see a practical use of how shared memory makes a kernel faster.</p>
 
@@ -422,21 +424,15 @@ __global__ void q8_solution_kernel(const float *a, float *out, const int n) {
     <h2>Puzzle 9: Pooling</h2>
     <p><mark style="background: #d8ebffb4; font-weight:800">"Implement a kernel that sums together the last 3 positions of `a` and stores it in `out`. You have 1 thread per position. You only need 1 global read and 1 global write per thread."</mark></p>
 
-    <p>Let's draw this out again.</p>
+    <p>Implementing the general case of adding 3 positions is simple, but we have to consider what to do when our index is 0 or 1.</p>
 
-    <img src="/api/placeholder/300/200" alt="Pooling problem diagram">
+    <p>For this particular problem, there's only 3 cases to worry about(when i=0; i=1; i>=2) and we can simply write them out.</p>
 
-    <p>As the diagram above shows us, implementing the general case of adding 3 positions is simple, but we have to consider what to do when our index is 0 or 1.</p>
+    <p>But wait, the problem said we have only "1 global read and 1 global write per thread." With our naive approach we are doing 3 global reads and 1 global write, because for each <code>i</code> we are reading from <code>a</code> 3 times<br>(<code>a[i] + a[i-1] + a[i-2]</code>).</p>
 
-    <p>Since there's only 3 cases to worry about, we can simply write them out.</p>
+    <p>We can reduce the number of global reads by using shared memory: first we copy <code>a</code> into <code>shared</code> and then read from <code>shared</code> instead of <code>a</code>. This is an example of using shared memory for efficient Data Reusing--frequently accessed elements should be kept nearby instead of fetching from DRAM every time it's needed.</p>
 
-    <p>But wait, the problem said we have only "1 global read and 1 global write per thread." We are doing 3 global reads and 1 global write if we add the last 3 positions of `a` and write in `out`.</p>
-
-    <p>We can solve this by using shared memory. This pooling reuses the same data multiple times, using shared memory will be very helpful. Let's look at the refined diagram below.</p>
-
-    <img src="/api/placeholder/300/200" alt="Pooling problem with shared memory">
-
-    <p>This looks a lot better. Let's see the code below.</p>
+    <p>Let's see the code below.</p>
 
     <pre><code class="language-cpp">constexpr int N = 10000;
 constexpr int BLOCK_SIZE = 256;
