@@ -12,7 +12,7 @@
 <body>
     <header>
         <h1>Introduction to CUDA Programming With GPU Puzzles</h1>
-        <span class="date">August 27, 2024</span>
+        <span class="date">August 29, 2024</span>
         <br><br>
         <a href="../../index.html" class="about-me-link">Home</a>
         &nbsp; &nbsp;
@@ -21,25 +21,28 @@
         <a href="../../non-technical/non-technical.html" class="about-me-link">non-technical</a>
     </header>
     <main>
-        <p>Looking at ways to use my GPUs to the fullest led me to learn CUDA programming to write custom kernels. I was thinking what would be an approachable way to teach this and I came across Sasha Rush's GPU Puzzles. This guide will be a hands-on approach to getting your feet wet with GPU Programming through solutions to GPU Puzzles both shown in Numba and CUDA.</p>
+        <p>This guide will be a hands-on approach to getting your feet wet with CUDA Programming through solving Sasha Rush's GPU Puzzles in CUDA.</p>
 
-        <p>No base of CUDA programming required. I'll introduce necessary concepts as we go.</p>
+        <p>Think of this as a combination of a textbook material and code. No base of GPU programming required. I'll introduce necessary concepts as we go.</p>
+
+        <p>Let's get started!</p>
 
         <br>
         <h2>Puzzle 1: Map</h2>
         <p><mark style="background: #d8ebffb4; font-weight:800">"Implement a kernel that adds 10 to each position of vector `a` and stores vector `out`. You have 1 thread per position."</mark></p>
 
-        <p>Let's take a step back and go over some terminology.</p>
-        <br>
+        <p>Let's take a step back and go over some terminology.<br><br></p>
+        
         <h3><span style="font-weight: 1000;">Q. What is a "kernel"?</span></h3>
         <ul>
             <li>A "kernel" in GPU Programming simply means a function that runs on a GPU. But unlike functions that we are used to, GPU kernels run code in a data-parallel manner by launching multiple threads with the same instruction.</li>
-        </ul>
-
         <br>
+          </ul>
+
+        <!-- <br> -->
         <h3><span style="font-weight: 1000;">Q. What is a "thread"?</span></h3>
         <ul>
-            <li>They are the smallest unit of execution that individually carry out the instructions given by the kernel. We'll go deeper into threads when we talk about the CUDA thread hierarchy below.</li>
+            <li>They are the smallest unit of execution that individually carry out the instructions given by the kernel. We'll go deeper into threads when we talk about the <a href="#thread_hierarchy">CUDA thread hierarchy</a> below.</li>
         </ul>
 
         <br>
@@ -112,7 +115,7 @@ __global__ void q3_solution_kernel(const float *a, float *out, int size) {
         <p>And to do this we need to learn about how threads are organized in CUDA.</p>
 
         <br>
-        <h2>CUDA Thread Hierarchy</h2>
+        <h2 id="thread_hierarchy">CUDA Thread Hierarchy</h2>
 
         <p>Threads are organized into this hierarchy in CUDA: <code>thread -> block -> grid</code></p>
         <p>Threads come together to form a block and blocks come together to form a grid.</p>
@@ -149,43 +152,35 @@ __global__ void q3_solution_kernel(const float *a, float *out, int size) {
         <br>
 
         <p>Recall the CUDA thread hierarchy is <code>thread -> block -> grid</code>.
-        Whenever a GPU kernel is called, a grid that holds multiple blocks is launched. These blocks are then distributed amongst the SMs where each SM can carry multiple blocks.</p>
+        Whenever a GPU kernel is called, a grid that holds multiple blocks is launched. These blocks are then distributed amongst the SMs where each SM can carry multiple blocks. By the nature of parallel programming, we can't choose which blocks will be executed first. This means that you shouldn't write any kernels that explicity expects some blocks to finish before others.</p>
 
         <br>
         <p>With this context, having a CUDA thread hierarchy has multiple benefits:</p>
 
         <ol>
-            <li>
-                <h3>Abstraction</h3>
+                <h3>1. Abstraction</h3>
                 <ul>
-                    <li>Managing millions of launched threads without abstraction will be a nightmare for us. Thread hierarchy helps us understand and debug our kernels.</li>
-                    <li>Indexing into threads using blocks is much simpler than having global thread indexes.</li>
-                    <li>Imagine your threads are labeled 0 to n-1 where n is (number of threads launched). It would be terrible for us to keep track of this without any abstraction.</li>
-                    <li>The H100(SXM5) can support up to ~270,000 threads at once.</li>
+                    <li>Managing millions of launched threads without abstraction will be a nightmare for us. Thread hierarchy helps us understand and debug our kernels from a wider perspective rather than at the individual thread-level.</li>
+                    <li>&nbsp; &nbsp; &nbsp;- e.g. The H100(SXM5) can support up to ~270,000 threads at once. That's a lot of threads to manage <br>&nbsp; &nbsp; &nbsp;&nbsp; &nbsp; &nbsp;&nbsp; &nbsp;&nbsp;without abstraction.</li>
                 </ul>
-            </li>
-            <li>
-                <h3>Easier Scheduling of Thread Executions</h3>
+                <h3>2. Easier Scheduling of Thread Executions</h3>
                 <ul>
                     <li>The SIMT programming model needs a way for threads to coordinate operations. For example, if a group of threads writes to memory while another group reads from memory, we need a way to sync the operations.</li>
                     <li>Having the thread hierarchy allows scheduling threads easy.</li>
                 </ul>
-                <p>Note: One question above was "Aren't all thread executing the same instruction anyways?" Although the description of the SIMT model makes it seem like that is the case, it's actually more nuanced. In NVIDIA GPUs, instructions are executed in "warps", where each warp contains 32 threads. See aside on warps section for more.</p>
-            </li>
-            <li>
-                <h3>Efficient Usage of L1 Cache(Shared Memory)</h3>
+                <p>Note: One question above was "Aren't all thread executing the same instruction anyways?" Although the description of the SIMT model makes it seem like that is the case, it's actually more nuanced. In NVIDIA GPUs, instructions are executed in "warps", where each warp contains 32 threads. See <a href="#warps">aside on warps</a> section for more.</p>
+                <h3>3. Needed to Use Shared Memory</h3>
                 <ul>
-                    <li>Notice that each SM has its own on-chip shared memory.</li>
-                    <li>Threads in the same block have access to the same shared memory.</li>
-                    <li>This allows us to write software that is hardware-aware and reduce memory transfer overheads. (reword)</li>
+                    <li>Thread hierarchy is also closely related with hardware.</li>
+                    <li>Shared memory, an on-chip memory, is accessible at the thread block level. Each block is allocated a portion of the shared memory, which can be accessed by all threads within that block.</li>
                 </ul>
-            </li>
+
         </ol>
 
         <p><strong>Note:</strong> Starting from the H100 series, there's now a new level added to the hierarchy called "cluster". So now the new CUDA thread hierarchy is <code>thread -> block -> cluster -> grid</code>.</p>
 
         <br>
-        <h3><span style="font-weight: 1000;">Aside on Warps</span></h3>
+        <h3 id="warps"><span style="font-weight: 1000;">Aside on Warps</span></h3>
         <p>Warps are a hardware constraint, which means the number of threads in a warp may change in future NVIDIA GPU architectures. Larger warp sizes will allow for more parallelism, but less flexibility whereas smaller warp sizes will have the opposite effect. 32 seems like the balance that NVIDIA has found and has stuck with for more than 10 years(GeForce 930M has warp size 32 as well).</p>
 
         <p>Now let's put these to practice and tackle the next couple puzzles.</p>
@@ -198,7 +193,7 @@ __global__ void q3_solution_kernel(const float *a, float *out, int size) {
 
         <p>Working with 2D matrixes means that we should work with threads in the `x` dimension and the `y` dimension. Recall that threads can use up to `x`, `y`, and `z` dimensions.</p>
 
-        <p>Also, CUDA follows the linear memory model, meaning that we can't do anything like `A[x][y]` but instead should do `A[x * width + y]` where `width` is the width of the matrix A.</p>
+        <p>Also, CUDA follows the linear memory model, meaning that we can't do anything like <code>A[x][y]</code> but instead should do <code>A[x * width + y]</code> where <code>width</code> is the width of the matrix A.</p>
 
         <p>And having more threads than positions reminds us to set up guardrails as seen in Puzzle 3.</p>
 
@@ -208,8 +203,8 @@ __global__ void q3_solution_kernel(const float *a, float *out, int size) {
 // we have more threads than positions
 
 __global__ void q4_solution_kernel(const float *A, float *out, int width) {
-  int row = cuda.threadIdx.y;    //row uses y dim
-  int col = cuda.threadIdx.x;    //col uses x dim 
+  int row = threadIdx.y;    //row uses y dim
+  int col = threadIdx.x;    //col uses x dim 
 
   if (row < width && col < width) { //check bounds
     out[row * width + col] = A[row * width + col] + 10;
@@ -225,7 +220,6 @@ __global__ void q4_solution_kernel(const float *A, float *out, int width) {
 
         <p>To recap, our inputs are vectors while our output is a matrix. Let's draw out a diagram below to see what this looks like.</p>
 
-        <p>(insert exaclidraw diagram of what broadcast addition is; sth like below)</p>
         <img src="images/puzzle_5_vis.png" alt="Broadcasting vis." width="auto" height="300" style="margin-left:auto; margin-right: auto;">        
 
         <pre><code class="language-cpp">// We have more threads than positions
@@ -248,13 +242,9 @@ __global__ void q5_solution_kernel(const float *a, const float *b, float *out, c
         <br>
         <h2>Using Multiple Thread Blocks</h2>
 
-    <p>All the puzzles until now worked with a strong assumption: that our input data will be smaller than a single block. This assumption was there for pedagogical purposes, but does not hold in the real world. The underlying conditions of using GPUs over CPUs are when there is...</p>
-    <ol>
-        <li>Large amounts of data</li>
-        <li>Task is (mostly) parallelizable</li>
-    </ol>
+    <p>All the puzzles until now worked with a strong assumption: that our input data will be smaller than a single block. This assumption was there for pedagogical purposes, but does not hold in the real world. After all, GPUs excel doing repeated operations over large data, so we will have to deal with using multiple blocks.</p>
 
-    <p>Therefore, using multiple blocks is the norm when it comes to GPU programming. And this next puzzle is our first puzzle that shows this!</p>
+    <p>And this next puzzle is our first puzzle that shows this!</p>
 
     <br>
     <h2>Puzzle 6: Blocks</h2>
@@ -285,22 +275,16 @@ __global__ void q6_solution_kernel(const float *a, float *out, const int n) {
   }
 }</code></pre>
 
-    <h4>Aside on Deciding the Right Block Size</h4>
+    <br>
+    <h3><span style="font-weight: 1000;">Aside on Deciding the Right Block Size</span></h3>
     <ul>
-        <li>Choosing the right block size depends on which GPU you are using and the context of your kernel. A general tip is to stick to `32*n < 1024` for 1D vectors and `(32,32)` for 2D matrixes.
-            <ul>
-                <li>For 3D tensors or more...please consult an actual professional...</li>
-                <li>This is because one warp is `32 threads` and max threads per block has been `1024` from V100s and up to H100s.</li>
-            </ul>
-        </li>
-        <li>Blocks that are too small will not take advantage of powerful parallelism ability of GPUs. ==> `TODO: VERIFY`</li>
-        <li>And blocks that are too large may drop thread utilization or make the kernel to not even run at all. ==> `TODO: VERIFY 2nd point`
-            <ul>
-                <li>Example: Your input vector size is `101` but your block size is `100`. You will have to use 2 blocks where the second block will utilize only `1%` of your total threads.</li>
-            </ul>
-        </li>
+        <p>Choosing the right block size depends on which GPU you are using and the context of your kernel. A general tip is to stick to <code>32*n < 1024</code> for 1D vectors and <code>(32,32)</code> for 2D matrixes.</p>
+        <p>This is because <code>1 warp = 32 threads</code> and <code>max threads per block = 1024</code> from V100s and onwards(until H100s, at the time of writing).</p>
+        <p>Blocks that are too small will not take advantage of powerful parallelism ability of GPUs while blocks that are too large may drop thread utilization rates or stop the kernel from even running at all.</p>
+        <p>&nbsp;&nbsp;&nbsp;<mark style="background: #fff2cf; font-weight:800">Example:</mark> Your input vector size is `101` but your block size is `100`. You will have to use 2 blocks where the second block will utilize only `1%` of your total threads.</p>
     </ul>
 
+    <br>
     <p>Things are coming together now. We know how to deal with 2D data, having too many threads or too few threads. Let's test our knowledge by mixing up two previous puzzles into one: using multiple blocks on 2D matrixes.</p>
 
     <br>
@@ -316,7 +300,8 @@ __global__ void q6_solution_kernel(const float *a, float *out, const int n) {
     <p>Let's see what this would look like in code.</p>
 
     <pre><code class="language-cpp">constexpr int N = 10000;
-constexpr int BLOCK_SIZE = (32, 32); // VERIFY
+constexpr int BLOCK_SIZE_X = 32;
+constexpr int BLOCK_SIZE_Y = 32; // 2D block of size (32,32)
 // assume that an appropriate number of blocks is called for you
 
 __global__ void q7_solution_kernel(const float *A, float *out, const int width) {
@@ -333,44 +318,38 @@ __global__ void q7_solution_kernel(const float *A, float *out, const int width) 
     <br>
     <h2>Dive into Shared Memory</h2>
 
-    <p>Loading data from DRAM is simple, but it's incredibly slow. Shared memory comes to the rescue by being an on-chip memory that is incredibly fast to read or write, with the caveat of being much smaller than DRAM. That means as CUDA programmers you have the power to pick which data can live on this sacred land(for better or worse).</p>
+    <p>Loading data from DRAM is simple, but it's incredibly slow. Shared memory comes to the rescue by being an on-chip memory that is incredibly fast to read or write, with the caveat of being much smaller than DRAM. That means as CUDA programmers you have the power to pick which data can live on shared memory(...yes manually..for better or worse).</p>
 
     <p>First, how fast is "fast"? Let's jump ahead a bit and take a peek at how fast matmul becomes just by using shared memory(+tiling).</p>
 
-    <p>I ran a naive matmul vs shared memory mamtul with square matrixes of size `[4096,4096]` and block size `(16,16)` on my 2080ti. Here are the results:</p>
+    <p>I wrote a naive matmul vs shared memory mamtul with square matrixes of size `[4096,4096]` and block size `(16,16)` on my 2080ti. Here are the results:</p>
 
     <ul>
         <li>Naive matmul: <code>155.375 ms</code></li>
         <li>Shared memory matmul: <code>96.0123 ms</code></li>
     </ul>
 
-    <p>Shared memory matmul is around 40% faster, with this effect to only expand with larger matrices. It's tempting to throw in shared memory everywhere after hearing this speedup, but it shouldn't be used everywhere.</p>
+    <p><mark style="background: #fff2cf;">Shared memory matmul is around 40% faster</mark>, with this effect to only expand with larger matrices. Although it's tempting to throw in shared memory everywhere after hearing this speedup, it shouldn't be used everywhere.</p>
 
     <h3><span style="font-weight: 1000;">Q. When Should We Use Shared Memory?</span></h3>
     <p>Here are the scenarios where using shared memory will make your kernel faster.</p>
     <ol>
-        <li>
-            <h4><span style="font-weight: 800;">Data Reuse</span></h4>
+            <h3><span style="font-weight: 800;">1. Data Reuse</span></h3>
             <ul>
                 <li>If the same data is used multiple times, it would be efficient to cache them somewhere close instead of having to fetch them from global memory every time.</li>
-                <li>e.g. Pooling, Convolution</li>
+                <li><mark style="background: #fff2cf;">e.g. Pooling, Convolution</mark></li>
             </ul>
-        </li>
-        <li>
-          <h4><span style="font-weight: 800;">Threads Sharing Data</span></h4>
+          <h3><span style="font-weight: 800;">2. Threads Sharing Data</span></h3>
             <ul>
                 <li>By loading data to shared memory, threads can access data that were fetched by other threads quickly.</li>
-                <li>e.g. Parallel Reduction, such as Prefix Sum</li>
+                <li><mark style="background: #fff2cf;">e.g. Parallel Reduction, such as Prefix Sum</mark></li>
             </ul>
-        </li>
-        <li>
-          <h4><span style="font-weight: 800;">Accelerating Non-Coalesced Memory Accesses</span></h4>
+          <h3><span style="font-weight: 800;">3. Accelerating Non-Coalesced Memory Accesses</span></h3>
             <ul>
                 <li>Non-coalesced or strided memory accesses slow down kernels, but they are required for some applications(e.g. matrix transpose).</li>
                 <li>By storing subsequent subsets("tile") of the data in shared memory, we can run non-coalesced memory accesses very quickly.</li>
-                <li>e.g. Matrix Multiply</li>
+                <li><mark style="background: #fff2cf;">e.g. Matrix Multiply</mark></li>
             </ul>
-        </li>
     </ol>
 
     <p>Now that we've seen how useful shared memory is, let's do a practice implementation with Puzzle 8.</p>
@@ -384,7 +363,7 @@ __global__ void q7_solution_kernel(const float *A, float *out, const int width) 
         <li>No data is reused, no need for threads to share data, and memory accesses are coalesced by default.</li>
     </ul>
 
-    <p>We'll run through this puzzle to show how shared memory is implemented in CUDA and we'll look at where using shared memory is actually useful in the next puzzle.</p>
+    <p>We'll run through this puzzle to show how shared memory is implemented in CUDA and we'll look at where using shared memory is actually useful in Part 2 where we walk through optimizing parallel reduction in CUDA.</p>
 
     <p>Let's dive into the code.</p>
 
@@ -412,13 +391,14 @@ __global__ void q8_solution_kernel(const float *a, float *out, const int n) {
 <h3><span style="font-weight: 1000;">Q. What is <code>__syncthreads()</code>?</span></h3>
     <ul>
         <li>This is a barrier to make sure all threads finished instructions up to this point before moving further.</li>
-        <li>Since we are dealing with parallel programs, we might have a situation where <code>thread 0</code> may have finished copying to <code>shared</code> but <code>Thread 1</code> is still copying to <code>shared</code>.</li>
+        <li>Since we are dealing with parallel programs, we might have a situation where <code>thread 0</code> may have finished copying to <code>shared</code> but <code>thread 1</code> is still copying to <code>shared</code>.</li>
         <li>Without having barriers, subsequent code may run into undefined behavior by fetching elements in memory that are not written into yet.</li>
     </ul>
 
-    <p>The most important line in the code snippet above is <code>__syncthreads()</code>. Make sure you always include thread barriers whenever you read or write data that will be used later in the code.</p>
+    <p>Make sure you always include thread barriers whenever you read or write data that will be used later in the code.</p>
 
-    <p>Now let's see a practical use of how shared memory makes a kernel faster.</p>
+    <br>
+    <!-- <p>Now let's see a practical use of how shared memory makes a kernel faster.</p>
 
     <br>
     <h2>Puzzle 9: Pooling</h2>
@@ -426,7 +406,7 @@ __global__ void q8_solution_kernel(const float *a, float *out, const int n) {
 
     <p>Implementing the general case of adding 3 positions is simple, but we have to consider what to do when our index is 0 or 1.</p>
 
-    <p>For this particular problem, there's only 3 cases to worry about(when i=0; i=1; i>=2) and we can simply write them out.</p>
+    <p>For this particular problem, there's only 3 cases to worry about(when <code>i=0; i=1; i>=2</code>) and we can simply write them out.</p>
 
     <p>But wait, the problem said we have only "1 global read and 1 global write per thread." With our naive approach we are doing 3 global reads and 1 global write, because for each <code>i</code> we are reading from <code>a</code> 3 times<br>(<code>a[i] + a[i-1] + a[i-2]</code>).</p>
 
@@ -458,14 +438,19 @@ __global__ void q9_solution_kernel(const float *a, float *out, const int n) {
     out[i] = shared[i] + shared[i - 1] + shared[i - 2];
   }
 }</code></pre>
+<br> -->
 
-    <p>That finishes our introduction to CUDA programming.</p>
+    <p>That finishes our introduction to CUDA programming! This was more on the basic functionalities available in CUDA and in Part 2 we'll get into the advanced use cases by optimizing a Parallel Reduction Sum kernel.</p>
+    <p>I don't know how much CUDA is actively written in industry now, but learning it definitely led me to see the hardware side of software and the internal workings of a GPU.</p>
+    <p>And the more I learn I see how it all goes back to Systems. If you're curious about these realizations of an undergrad going from ML methodology to Systems, continue reading more here(err still writing rn).</p>
 
-    <h2>Resources</h2>
-    <ol>
-        <li>Sasha rush GPU Puzzle</li>
-        <li>nvidia gpu page</li>
-    </ol>
+    <br>
+    <h2>References</h2>
+    <p id="ref1">[1] <a href="https://github.com/srush/GPU-Puzzles" target="_blank">Sasha Rush, GPU Puzzles Github Repo</a></p>
+    <p id="ref2">[2] <a href="https://docs.nvidia.com/deeplearning/performance/dl-performance-gpu-background/index.html" target="_blank"> NVIDIA GPU Performance Guide</a></p>
+    <p id="ref3">[3] <a href="https://developer.nvidia.com/cuda-gpus" target="_blank">NVIDIA CUDA Compute Capability Specs</a></p>
+    <p id="ref4">[4] Programming Massively Parallel Processors(PMPP) Textbook, 4th ed. Hwu, Kirk, Hajj.</p>
+
     </main>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/autoloader/prism-autoloader.min.js"></script>
