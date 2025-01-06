@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What I Learned in My Gap Year</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <link rel="stylesheet" type="text/css" href="../../../style.css">
+</head>
+<body>
+    <header>
+        <h1>What I Learned in My Gap Year</h1>
+        <span class="date">December 29, 2024</span>
+        <br><br>
+        <a href="../../../index.html" class="about-me-link">Home</a>
+        &nbsp; &nbsp;
+        <a href="../../../about/about.html" class="about-me-link">About Me</a>
+        &nbsp; &nbsp;
+        <a href="../../non-technical.html" class="about-me-link">non-technical</a>
+    </header>
+    <main>
+      <div style="text-align: center;">
+        <img src="images/cover.jpg" alt="seoul han river pic" width="900" height="auto" style="margin-left:auto; margin-right: auto;">
+      </div>
+      <br><br>
+        <p>2024 was a year of shaping my taste and being humbled.
+          <br><br>
+        I spent most of 2024 doing my gap year from my undergrad. My initial plan was to fully dive into the math behind ML and build intuition on why it works so well. Here's what I thought back when I started:
+          <br><br><br>
+        <em>"...I want to take the following year away from school to reach out to the things I wish to learn with my own curriculum with the goal of developing my depth of knowledge in both science and engineering. I will start from going over the fundamentals again and then branch out to tools and puzzle pieces which I believe will help me tackle larger problems in the years to come…"</em></p>
+        
+        <p style="text-align: right;"> - me back in march, 2024</p>
+        <br>
+
+        <p>And I mapped out the year ahead like this too:</p>
+        <!-- <img src="images/init_plans.png" alt="initial gap year plans" width="700" height="auto" style="margin-left:auto; margin-right: auto;"> -->
+        <div style="text-align: center;">
+          <img src="images/init_plans.png" alt="initial gap year plans" width="700" height="auto">
+        </div>
+
+        <p>It's odd but I wanted to take a gap year to study on my own. <br><br>Looking back, I had these two assumptions deep down:
+        <ol>
+            <li>My time would be better spent outside of taking coursework that zoom past the content & give tedious homeworks</li>
+            <li>I can manage to cover multiple directions(theory, systems, interpretability, bio) in ML if I was just given the time</li>
+        </ol>
+        <br>
+        And now at the end of the gap year, I realized I was rash about these assumptions. Here’s a summary of how my viewpoints have changed.
+        <br><br><br>
+        <span class="bold-extra-bold">I realized...</span>
+        <ol>
+          <li><mark style="background: #fff2cf;">Multiple directions of research cannot be covered at once</mark>, especially when I have weak foundations in them</li>
+          <li><mark style="background: #fff2cf;">Best way to build strong foundations is through in-person coursework</mark></li>
+          <ol type="i">
+            <li>What felt like “zooming past the content” was actually the professor’s good balance between breadth vs depth to teach what’s practical</li>
+            <li>Having a group of friends to work/learn together with is a big support factor</li>
+          </ol>
+          <li>I should <mark style="background: #fff2cf;">focus building advanced foundations in practical, hard skills</mark> that are transferable rather than niche ones</li>
+          <ol type="i">
+            <li>good example: algorithms, computer systems</li>
+            <li>bad example: SE(3) diffusion</li>
+          </ol>
+          <li>I like <mark style="background: #fff2cf;">performance engineering</mark> a lot</li>
+          <ol type="i">
+            <li>I love the certainty in progress metrics and clear explainability</li>
+          </ol>
+        </ol>
+        <br><br>
+
+        <span class="bold-extra-bold">I still believe...</span>
+        <ol>
+          <li><mark style="background: #fff2cf;">Strong foundations are the #1 factor to tackling larger questions</mark></li>
+          <ol type="i">
+            <li>(Creating new approaches) >>> (HUGE WALL) >>> (Understanding new approaches)</li>
+            <li>And and this jump comes from how strong my foundations in that field are</li>
+          </ol>
+        </ol>
+      </p>
+
+        <br><br>
+        <h2>What did I actually do?</h2>
+        <br>
+
+        <div style="text-align: center;">
+          <img src="images/march_pic.jpg" alt="march pic" width="auto" height="300">
+        </div>
+
+        <h3>March - April: Review optimization & probability + Paper perusing</h3>
+        <p>One difficult thing from this period was finding the balance between breadth vs depth in terms of review content. Some days I would feel unproductive for going unnecessarily too deep into one very niche topic. And I realized course syllabi actually do a good job managing this balance, especially since not all parts of a thick textbook on X is relevant.</p>
+
+        <p>Another thing was that it got lonely quickly. The idea of studying in my own world by myself was less ideal than how I thought it would be.</p>
+
+        <p>I wanted to find a team to either study or do projects with.</p>
+        <br><br><br>
+
+        <div style="text-align: center;">
+          <img src="images/snu_pic.jpg" alt="snu pic" width="auto" height="300">
+        </div>
+
+        <h3>May - August: Worked in a uni lab project for protein-nucleic acid complex structure estimation</h3>
+        <p>I joined Seoul National Uni's ML lab that was working on a Bio ML project. AlphaFold 3(AF3) came out the week after I joined and the mix of excitement and hints of sadness were apparent in the team.</p>
+
+        <p>The sources of sadness were a complicated mix. There was spite for AF3 being closed-source and also some powerlessness in seeing the disparity of compute. But the largest source of discontent seemed to stem from its heavy emphasis on engineering rather than science in the building of AF3.</p>
+
+        <p>But I loved AF3's emphasis on parallelization and efficiency. It seemed ironic to me that a large company like DeepMind focused on more compute-efficiency than us, who were very GPU-poor compared to them. That's why most of my time on the project was spent on finding how to make the model more efficient and faster.</p>
+
+        <p>This was my first taste of optimization and by the end I got the model to run 3x faster, but the more important part was discovering how I loved the systematic process of identifying bottlenecks and seeing concrete improvements in speed.</p>
+
+        <p>The practical and concrete side to performance drew me in. This was especially because there were many times in DL where I was lost since it felt a little too black-boxy for me to understand what's actually going on.</p>
+        <br><br><br>
+      
+        <div style="text-align: center;">
+          <img src="images/sep_pic.jpg" alt="september pic" width="auto" height="300">
+        </div>
+
+        <h3>September: Hooked on GPU Performance techniques & went through a textbook</h3>
+        <p>Being hooked on performance, I wanted to have a more fundamental approach so I picked up a GPU performance textbook.</p>
+
+        <p>But the more I learned, I noticed how methods for performance enhancements are all just based on a good understanding of fundamental computer systems.</p>
+
+        <p>I realized that I needed a much stronger base for systems knowledge. And this was when I decided to go back to school since there's good coursework and friends to learn together with.</p>
+
+        <p>It was a funny realization to see that I spent a gap year to realize how important coursework is along with having a group of friends to work together with.</p>
+        <br><br><br>
+
+        <div style="text-align: center;">
+          <img src="images/oct_pic.jpg" alt="october pic" width="auto" height="300">
+        </div>
+
+        <h3>October - December: Contract work for DL for audio + Open source for Performance libraries(SGLang & HuggingFace Accelerators) + less ML and more books and movies</h3>
+        <p>These months were more chill and I relaxed a lot. I also travelled to hokkaido, japan.</p>
+        <div style="display: flex; justify-content: center; gap: 20px; margin: 20px 0;">
+          <img src="images/sap_0.jpg" alt="sapporo pic 0" width="250" height="auto">
+          <!-- <img src="images/sap_1.jpg" alt="sapporo pic 1" width="250" height="auto"> -->
+          <img src="images/sap_3.jpg" alt="sapporo pic 3" width="250" height="auto">
+
+          <img src="images/sap_2.jpg" alt="sapporo pic 2" width="250" height="auto">
+      </div>
+        <br><br><br>
+
+        <h2>Gap year conclusions</h2>
+        <p>Going back, I want to build more advanced hard skills in Systems to be good at making things faster and efficient.</p>
+
+        <p>I don't have a grand application for this in mind yet. Mostly because the upper limit of whatever application I think of now is limited by the small amount of knowledge I currently have.</p>
+
+        <p>I'll put my head down and work. Then I'll begin to see more of what I could do.</p>
+        <br><br>
+        <div style="text-align: center;">
+          <img src="images/berk_pic.jpg" alt="berkely pic" width="auto" height="300">
+        </div>
+    </main>
+    <br><br><br>
+</body>
+</html>
