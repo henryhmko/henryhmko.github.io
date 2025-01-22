@@ -188,5 +188,16 @@ code:not([class*="language-"]) {
     font-family: 'Pretendard', sans-serif;
     font-weight: 300;
 }
+.responsive-image-container {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px 0;
+}
+.responsive-image {
+    width: 100%;
+    height: auto;
+    display: block;
+}
 
 
