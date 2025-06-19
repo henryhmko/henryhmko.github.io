@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPU Deep Dive</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+    <link rel="stylesheet" type="text/css" href="../../style.css">
+</head>
+<body>
+    <header>
+        <h1>TPU Deep Dive</h1>
+        <span class="date">June 18, 2025</span>
+        <br><br>
+        <a href="../../index.html" class="about-me-link">Home</a>
+        &nbsp; &nbsp;
+        <a href="../../about/about.html" class="about-me-link">About Me</a>
+        &nbsp; &nbsp;
+        <a href="../../non-technical/non-technical.html" class="about-me-link">non-technical</a>
+    </header>
+    <main>
+        <p>I've been working with TPUs a lot recently and it's fun to see how they had such different design philosophies compared to GPUs.</p>
+
+        <p>The main strongpoint for TPUs is in their scalability. This is achieved through a co-design of both the hardware side (e.g. energy efficiency and modularity) and the software side (e.g. XLA compiler).</p>
+
+        <br>
+        <h2><span style="font-weight: 500;">Background</span></h2>
+        <p>To give a brief tldr on TPUs, it's Google's ASIC that focuses on two factors: extreme matmul throughput + energy efficiency.</p>
+
+        <p>Their origins go back to Google in 2006, when they were first evaluating whether they should implement either GPUs, FPGAs, or custom ASICs. Back then there were only a few applications that necessitated specialized hardware and they decided those needs could be met by bringing in excess CPU compute from their large datacenters. But this changed in 2013 when Google's voice search feature ran on neural networks and internal projections speculated that they would need much more compute if it took off.</p>
+
+        <p>Fast forward to today and TPUs power the majority of Google's AI services. Of course, that includes training and inference of Gemini or Veo, but also deploying their recommendation models (DLRMs).</p>
+
+        <p>Let's dive in and look at TPU internals from the bottom up.</p>
+
+        <br>
+        <h1>TPU Single-Chip Level</h1>
+        <p>I'll focus my diagrams to TPUv4, but this layout is more or less applicable to latest generation TPUs (e.g. TPUv6p "Trillium"; TPUv7 "Ironwood's details aren't released as of writing in June, 2025).</p>
+
+        <p>Here's the layout of a single TPUv4 chip:</p>
+
+        <br><br>
+        <figure style="text-align: center;">
+            <img src="images/single_chip.png" alt="chip diagram" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">TPU Single Chip + TensorCore</figcaption>
+        </figure>
+        <br>
+
+        <p>In each chip, there's two TPU TensorCores, which are responsible for our compute. (Note: inference-specialized TPUs have only one TensorCore). Both TensorCores have shared memory units: CMEM(128MiB) and HBM(32GiB).</p>
+
+        <p>And within each TensorCore, there lies our compute units and smaller memory buffers:</p>
+        
+        <ul>
+            <li><strong>Matrix Multiply Unit (MXU)</strong><br>
+            This is the key component of the TensorCore and is a 128x128 systolic array.<br>
+            We'll cover systolic arrays below.</li>
+            <br>
+            <li><strong>Vector Unit (VPU)</strong><br>
+            General elementwise operations (e.g. ReLU, pointwise add/mul, reductions)</li>
+            <br>
+            <li><strong>Vector Memory (VMEM; 32MiB)</strong><br>
+            Memory buffer. Data from HBM is copied into the VMEM before the TensorCore can do any computations.</li>
+            <br>
+            <li><strong>Scalar Unit + Scalar Memory (SMEM; 10MiB)</strong><br>
+            Tell the VPU and MXU what to do.<br>
+            Manages control flow, scalar operations, and memory address generation.</li>
+        </ul>
+
+        <br>
+        <p>If you're coming from NVIDIA GPUs, there's some initial observations that might throw you off:</p>
+        <ul>
+            <li>On-chip memory units (CMEM, VMEM, SMEM) on TPUs are much larger than L1, L2 caches on GPUs.</li>
+            <li>HBM on TPUs are also much smaller than HBM on GPUs.</li>
+            <li>There seems to be a lot less "cores" responsible for the computation</li>
+        </ul>
+
+        <p>This is the complete opposite of GPUs where they have smaller L1, L2 caches (256KB and 50MB, respectively for H100), larger HBM (80GB for H100), and tens of thousands of cores.</p>
+
+        <p>Before we go any further, recall that TPUs are capable of extremely high throughput just like GPUs. TPU v5p can achieve 500 TFLOPs/sec per chip and with a full pod of 8960 chips we can achieve approximately 4.45 ExaFLOPs/sec. The newest "Ironwood" TPUv7 is said to reach up to 42.5 ExaFLOPS/sec per pod (9216 chips).</p>
+
+        <p>To understand how TPUs achieve this, we need to understand their design philosophy.</p>
+
+        <br>
+        <h1>TPU Design Philosophy</h1>
+
+        <p>TPUs achieve amazing throughput and energy efficiency by relying on two large pillars and a key assumption: systolic arrays + pipelining, Ahead-of-Time (AoT) compilation, and the assumption that most operations can be expressed in a way that maps well to systolic arrays. Fortunately, in our modern DL era, matmuls comprise the bulk of computation, which are fit for systolic arrays.</p>
+
+        <br>
+        <h2>TPU Design choice #1: Systolic Arrays + Pipelining</h2>
+
+        <h3><span style="font-weight: 500;">Q. What is a Systolic Array?</span></h3>
+
+        <p>Systolic array is a hardware design architecture consisting of a grid of interconnected processing elements (PE). Each PE performs a small computation (e.g. multiply and accumulate) and passes the results to neighboring PEs.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/systolic_arr.png" alt="systolic array diagram" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+        </figure>
+        <br>
+
+        <p>The benefit of such a design is that once data is passed into a systolic array, additional control logic on how data should be processed is not required. Also, when given a large enough systolic array, there's no memory read/writes other than the input and output.</p>
+
+        <p>Due to their rigid organization, systolic arrays can only handle operations with fixed dataflow patterns, but fortunately matrix multiplication and convolutions fit perfectly in this regime.</p>
+
+        <p>Moreover, there's clear opportunities for pipelining to overlap computation with data movements. Here's a diagram below for a pipelined pointwise operation on a TPU.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/pipeline_pointwise.gif" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (Source: "How to Scale Your Model")</figcaption>
+        </figure>
+        <br>
+
+        <br>
+        <h3><span style="font-weight: 500;">Aside: Downsides of Systolic Arrays - Sparsity</span></h3>
+
+        <p>You can see how systolic arrays love dense matrices (i.e. When every PE is active nearly every cycle). However, the downside is that there's no performance improvements for sparse matrices of the same size: the same number of cycles will have to be performed where PEs are still doing work even for zero-valued elements.</p>
+
+        <p>Dealing with this systematic limitation of systolic arrays will become more important if the DL community favors more irregular sparsity (e.g. MoE).</p>
+
+        <br><br>
+        <h2>TPU Design choice #2: Ahead of Time (AoT) Compilation + Less Reliance on Caches</h2>
+
+        <p>This section answers how TPUs achieve high energy efficiencies through avoiding caches through hardware-software codesign of TPUs + XLA compiler.</p>
+
+        <p>First, recall that traditional caches are designed to handle unpredictable memory access patterns. A program for one application can have vastly different memory access patterns with those from programs for other applications. In essence, caches allow hardware to be flexible and adapt to a wide range of applications. This is a large reason why GPUs are very flexible hardware (note: compared to TPUs).</p>
+
+        <p>However, cache accesses (and memory accesses in general) cost significant energy. Below is a rough estimate of energy costs for operations on a chip (45nm, 0.9V). The key takeaway here is that memory access and control takes up most of our energy and that arithmetic takes up significantly less.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/patterson_breakdown.png" alt="TPU data movement visualized" width="auto" height="150" style="margin-left:auto; margin-right: auto;">
+            <!-- <figcaption style="margin-top: 10px; font-style: italic;">Instruction Energy Breakdown (45nm, 0.9V)</figcaption> -->
+        </figure>
+        <br>
+
+        <p>But what if your application is very specific and its computation/memory access patterns are highly predictable?</p>
+
+        <p>As an extreme example, if our compiler can figure out all the required memory accesses ahead of time, then our hardware can get by with just a scratchpad memory as a buffer with no caches.</p>
+
+        <p>This is what the TPU philosophy aims for and exactly why TPUs were codesigned with the XLA compiler to achieve this. The XLA compiler generates optimized programs by analyzing computation graphs ahead of time.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Q. But JAX also works well with TPUs, but they use @jit?</span></h3>
+
+        <p>JAX+XLA on TPUs are in a hybrid space of JIT and AOT, thus the confusion. When we call a jitted function in JAX for the first time, JAX traces it to create a static computation graph. This is passed to the XLA compiler, where it is turned into a fully static binary for TPUs. It is during the last conversion stage where TPU-specific optimizations are done (e.g. minimize memory accesses) to tailor the process to TPUs.</p>
+
+        <p>But there's one caution: jitted functions have to be compiled and cached again if they are run with different input shapes. That's why JAX does poorly with any dynamic padding or layers with for loops with different lengths that depend on the input.</p>
+
+        <p>Of course, this approach sounds very good but there are also inconvenient downsides. There's the lack of flexibility and this heavy reliance on compilers is a double-edged sword.</p>
+
+        <p>But why did Google still pursue this design philosophy?</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">TPUs and Energy Efficiency (TPUv4)</span></h3>
+
+        <p>The previous diagram for energy usage was not an accurate representation for TPUs, so here's the energy usage breakdown for TPUv4. Note that TPUv4 is 7nm and the 45nm is there for a comparison.</p>
+
+        <br>
+        <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-end;">
+          <figure style="text-align: center; margin: 0;">
+              <img src="images/patterson_breakdown_1.png" alt="TPU data movement visualized" width="auto" height="300">
+              <figcaption style="margin-top: 10px; font-style: italic;">Energy per Operation (TPUv4, 7 nm)</figcaption>
+          </figure>
+          <figure style="text-align: center; margin: 0;">
+              <img src="images/tpuv4_energy_breakdown.png" alt="Second image description" width="auto" height="400">
+              <!-- <figcaption style="margin-top: 10px; font-style: italic;">Second caption here</figcaption> -->
+          </figure>
+      </div>
+        <br>
+
+        <p>The bar plot on the left shows us the visualization of values, but one thing to note is that modern chips use HBM3, which uses much less energy than DDR3/4 DRAM shown over here. Nevertheless, this shows how memory operations consume a couple orders of magnitudes more energy.</p>
+
+        <p>This is a good connection with modern scaling laws: we're very much happy to increase FLOPS in exchange for reduced memory operations. So reducing memory operations has double the optimization benefits since they not only make programs fast, but also consume much less energy.</p>
+
+        <br>
+        <h1>TPU Multi-Chip Level</h1>
+
+        <p>Let's move up the ladder to look at how TPUs work in multi-chip settings.</p>
+
+        <br>
+        <h2><span style="font-weight: 500;">Tray Level (a.k.a "Board"; 4 chips)</span></h2>
+        
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/tray.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
+            <!-- <figcaption style="margin-top: 10px; font-style: italic;">FIX THIS</figcaption> -->
+        </figure>
+        <br>
+
+        <p>A single TPU tray consists of 4 TPU chips or 8 TensorCores (referred to as just "cores"). And each tray gets its own CPU Host (Note: For inference TPUs, one host accesses 2 trays since they only have 1 core per chip).</p>
+
+        <p>Host⇔Chip connection is PCIe, but Chip⇔Chip connection is Inter-Core Interconnect (ICI), which has a higher bandwidth.</p>
+
+        <p>But ICI connections extend much further to multiple trays. And for this, we need to move up to the Rack level.</p>
+
+        <br>
+        <h2><span style="font-weight: 500;">Rack Level (4x4x4 chips)</span></h2>
+
+        <p>The especially exciting part about TPUs is in their scalability, which we start to see from the Rack level.</p>
+
+        <p>A TPU rack consists of 64 TPUs that are connected in a 4x4x4 3D torus. If you saw Google's promotion material for TPUs like below, this is an image of 8 TPU racks.</p>
+
+        <br>
+        <figure style="text-align: center;">
+          <img src="images/tpu_racks.png" alt="TPU data movement visualized" width="auto" height="300" style="max-width: 100%; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">8 TPU Racks (TPUv4)</figcaption>
+        </figure>
+        <br>
+
+        <p>But before we dive into racks, we need to clarify some confusing terminology: racks vs pods vs slices.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Q. What's the difference between a "TPU Rack" vs a "TPU Pod" vs "TPU Slice?</span></h3>
+
+        <p>Different Google sources use them a bit differently and sometimes use "TPU Pods" and "TPU Slices" interchangeably. But for this article we'll stick with the definitions used in Google's TPU papers and in GCP's TPU documentation.</p>
+
+        <ul>
+            <li><strong>TPU Rack:</strong> Physical unit that contains 64 chips. Also known as a "cube".</li>
+            <li><strong>TPU Pod:</strong> Maximum unit of TPUs that can be connected through ICI and optical fibers. Also known as a "Superpod" or "Full pod". For example, a TPU Pod for TPUv4 would consist of 4096 chips or 64 TPU Racks.</li>
+            <li><strong>TPU Slice:</strong> Any configuration of TPUs that are in between 4 chips and the Superpod size.</li>
+        </ul>
+
+        <p>The key difference is that a TPU Rack and a TPU Pod is a physical unit of measure whereas a TPU Slice is an abstract one. There's, of course, important physical properties for setting a TPU Slice but let's abstract this away for now.</p>
+
+        <p>For now, we'll work with physical units of measure: TPU Racks and TPU Pods. This is because seeing how TPU systems are physically wired together allows us to understand TPU design philosophies better.</p>
+
+        <br>
+        <p>Now back to TPU racks (for TPUv4):</p>
+
+        <p>A single TPU Rack consists of 64 chips that are connected together through ICI and Optical Circuit Switching (OCS). In essence, we connect multiple trays together to emulate a system of 64 chips. This theme of putting together smaller parts to make a supercomputer continues to appear later.</p>
+
+        <p>Below is a diagram for a single TPUv4 Rack. It's a 4x4x4 3D torus where each node is a chip, and the arrows in blue are ICI while the lines on the faces are OCS.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/rack_ocs.png" alt="Simple thread hierarchy" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Single TPU Rack with OCS</figcaption>
+        </figure>
+        <br>
+
+        <p>This diagram, however, raises a couple questions. Why is the OCS only used for the faces? In other words, what are the benefits of using OCS? There's 3 large benefits and we'll cover the other two down below later.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Benefits of OCS #1: Wraparound</span></h3>
+
+        <p><mark style="background: #fff2cf;">Faster communication between nodes through wraparound</mark></p>
+
+        <p>The OCS also acts as a wraparound for a given TPU configuration. This reduces the worst case number of hops between two nodes from N-1 hops to (N-1)/2 per axis, as each axis becomes a ring (1D torus).</p>
+
+        <p>This effect becomes more important as we scale up further since reducing chip-to-chip communication latency becomes crucial for high parallelization.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Aside: Not all TPUs have 3D Torus Topologies</span></h3>
+
+        <p>Note: older TPU generations (e.g. TPUv2, v3) and inference TPUs (e.g. TPUv5e, TPUv6e) have a 2D torus topology instead of a 3D torus like below. The TPUv7 "Ironwood", however, seems to be a 3D torus although it's promoted as an inference chip (Note: I'm only assuming from their promotional material).</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/torus_2d.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">2D Torus Topology</figcaption>
+        </figure>
+        <br>
+
+        <br>
+        <h2>Full Pod Level (aka "Superpod"; 4096 chips for TPUv4)</h2>
+
+        <p>Just like how we connected multiple chips together to make a TPU Rack, we can connect multiple racks to make one large Superpod.</p>
+
+        <p>A Superpod also refers to the largest configuration of interconnected chips (using only ICI and OCS) that TPUs can reach. There is a multi-pod level next, but this has to go through a slower interconnect and we'll cover this after this.</p>
+
+        <p>This changes depending on the generation, but for TPUv4 is 4096 chips (i.e. 64 Racks of 4x4x4 chips). For the newest TPUv7 "Ironwood", this is 9216 chips.</p>
+
+        <p>The diagram below shows one Superpod for TPUv4.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/full_pod.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Superpod for TPUv4 (64 Racks)</figcaption>
+        </figure>
+        <br>
+
+        <p>Note how each cube (i.e. a TPU Rack) is connected with each other through OCS. This also allows us to take slices of TPUs in a pod.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">TPU Slices with OCS</span></h3>
+
+        <p>We can request subsets of TPUs within the pod and these are TPU Slices. But there's multiple topologies to choose from even if you want N chips.</p>
+
+        <p>For example, say you want a total of 512 chips. You can ask for a cube (8x8x8), a cigar shape (4x4x32), or a rectangle (4x8x16). Choosing the topology of the slice is a hyperparameter in itself.</p>
+
+        <p>The topology you choose will affect the communication bandwidth between nodes. And this directly affects the performance of different parallelism methods.</p>
+
+        <p>For example, a cube (ex. 8x8x8) would be preferred for all-to-all communications, such as data parallelism or tensor parallelism, because it has the highest bisection bandwidth. However, a cigar shape (ex. 4x4x32) would be better for pipeline parallelism as it can communicate with sequential layers faster (assuming one layer fits in a sub-slice of 4x4 chips).</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/diff_topo.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Example TPU Topologies</figcaption>
+        </figure>
+        <br>
+
+        <p>But, of course, optimal topologies would depend on the model and finding this is a job in itself as well. The TPUv4 paper also measured this to show how topology changes can accelerate throughput (Note: I'm not sure which LLM architecture the first row is referring to as it wasn't specified).</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/diff_topo_fig.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Improvements in Throughput with Different Topologies</figcaption>
+        </figure>
+        <br>
+
+        <p>We covered TPU Slices, but there's one important feature that contributes to a high operational stability of TPUs.</p>
+
+        <p>It's that these slices do not have to be contiguous racks thanks to OCS. This is the second benefit of using OCS–and probably the largest–that we didn't get to earlier.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Benefits of OCS #2: (Reconfigurable) Noncontiguous Multi-Node Slices</span></h3>
+
+        <p>Note that this is different from hard-wiring multiple nodes together to emulate noncontiguous slices. Since OCS is a switch instead of being hard-wired, there's much less physical wires across nodes, thus allowing for higher scalability (i.e. larger TPU Pod sizes).</p>
+
+        <p>This allows flexible node configuration as scale. For example, say there are three jobs we want to run on a single pod. Although naive scheduling would not allow this, OCS connections instead allow us to abstract away the position of nodes and view the entire pod as just a "bag of nodes".</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/multijob.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Individual Jobs Can Treat TPU Racks in a Pod as "Bag of Nodes"</figcaption>
+        </figure>
+        <br>
+
+        <p>This increases pod utilization and possibly much easier maintenance in case of failed nodes. Google described this as "Dead nodes have small blast radius." However, I'm not sure how its liquid cooling would be impacted when only certain nodes have to be shut down.</p>
+
+        <p>Finally, there's an interesting extension of this flexible OCS: we can also change the topology of TPU Slices, such as from a regular torus to a twisted torus.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Benefits of OCS #3: Twisted TPU Topologies</span></h3>
+
+        <p>We previously saw how we could achieve different TPU Slice topologies by changing (x,y,z) dimensions for a fixed number of chips. This time, however, we'll be working with fixed (x,y,z) dimensions, but instead change how they are wired together to achieve different topologies.</p>
+
+        <p>A notable example is going from a regular torus of a cigar shape into a twisted cigar torus as seen below.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/twisted_torus.png" alt="TPU data movement visualized" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Regular vs Twisted Torus (Source: TPUv4 Paper)</figcaption>
+        </figure>
+        <br>
+
+        <p>The twisted torus case allows for faster communication between chips across the twisted 2D plane. This is especially useful for accelerating all-to-all communications.</p>
+
+        <p>Let's dive a little deeper and imagine a concrete scenario where this would help.</p>
+
+        <br>
+        <h3><span style="font-weight: 500;">Accelerated Training using Twisted Torus</span></h3>
+
+        <p>Theoretically, twisting the torus will bring the largest benefit for tensor parallel (TP) since there are multiple all-gather and reduce-scatter operations per layer. It could bring moderate benefits for data parallel (DP) since there's an all-reduce per training step as well, but this would be less frequent.</p>
+
+        <p>Imagine we're training a standard decoder-only transformer and we want to employ lots of parallelism to accelerate training. We'll see two scenarios below.</p>
+
+        <p><strong>Scenario #1: 4x4x16 Topology (TP + PP; Total 256 chips)</strong></p>
+
+        <p>Our z axis will be our PP dimension and our 2D TP dimension will be 4x4. In essence, assume each layer k lies at z=k and that each layer is sharded across 16 chips. Assume standard OCS connections (i.e. nearest-neighbor) if not explicitly drawn.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/twisted_scenario_1.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">4x4x16 Topology with TP + PP</figcaption>
+        </figure>
+        <br>
+
+        <p>We'll twist the 2D torus at each z=k, which makes communication between chips in each TP layer faster. Twisting along our PP dimension is unnecessary as they rely mostly on point-to-point communication.</p>
+
+        <p><strong>Note:</strong> In reality, twisting the torus brings benefits when the number of chips is larger than 4x4. We're using 4x4 only for visualization purposes.</p>
+
+        <p><strong>Scenario #2: 16x4x16 Topology (DP + TP + PP; Total 1024 chips)</strong></p>
+
+        <p>As an extension, we'll be adding a DP dimension of 4 to our previous scenario. This means there's 4 of scenario #1 models along the x axis.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/twisted_scenario_2.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">16x4x16 Topology with DP + TP + PP</figcaption>
+        </figure>
+        <br>
+
+        <p>Notice how twisting the torus is limited to each TP dimension of each DP model (i.e. A 4x4 2D plane for each z=k given k=1…16). There is only a wraparound for the DP dimension so that each row becomes a horizontal ring of size 16.</p>
+
+        <p>You might have noticed that there's an alternative topology of 8x8x16 instead (i.e. 2x2 DP dimension), but this becomes more complicated as we're mixing our DP and TP dimensions. Specifically, it's unclear how we should construct the OCS wraparounds for the y-axis while accommodating twisted toruses for each TP dimension.</p>
+
+        <br>
+        <h2>Multi-Pod Level (a.k.a "Multislice"; 4096 chips for TPUv4)</h2>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/multipod.png" alt="TPU data movement visualized" width="auto" height="200" style="margin-left:auto; margin-right: auto;">
+        </figure>
+        <br>
+
+        <p>The final level of TPU hierarchy is the Multi-pod level. This is where you can treat multiple pods as one large machine. However, the communication between pods is done through Data-Center Network (DCN), which has a lower bandwidth than ICI.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/multipod_dcn.png" alt="TPU data movement visualized" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">Two Pods Connected Over DCN</figcaption>
+        </figure>
+        <br>
+
+        <p>Diagram showing how Multi-pod training can be configured</p>
+
+        <p>This was how PaLM was trained. It took 56 days to train over 6144 TPUv4s (2 pods). Below you can see the TPU job assignments over 6 pods: green is for PaLM, red is no assignment, and the rest are other jobs. Note that each square is a 4x4x4 cube of TPUs.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/palm_train.gif" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">TPU Pod Utilization for Training PaLM (Source: HotChips Presentation)</figcaption>
+        </figure>
+        <br>
+
+
+        <p>Making this possible is difficult on its own, but what makes this more impressive is the focus on developer experience. Specifically, it's about focusing on the question of "How can we abstract the systems/HW part of model scaling as much as possible?".</p>
+
+        <p>Google's answer is to make the XLA compiler responsible for coordinating communication between chips at large scales. With the right flags given by researchers (i.e. Parallelism dimensions for DP, FSDP, TP, num slices, etc), the XLA compiler inserts the right hierarchical collectives for the TPU topology at hand (GSPMD; Xu, 2021). The goal is to make large scale training happen with as little code changes as possible.</p>
+
+        <p>For example, here's a breakdown of an all-reduce operation across multiple slices from Google's blog.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/xla_reduce.jpg" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">XLA Reduction of All-Reduce Across Pods</figcaption>
+        </figure>
+        <br>
+
+        <p>This is to show that the XLA compiler takes care of communication collectives both between slices and within slices.</p>
+
+        <p>For a concrete example, there could be a TPU topology like below for training a model. The activation communication happens within a slice through ICI whereas gradient communications will happen across slices through DCN (i.e. across the DCN DP dim).</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/multipod_many.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <!-- <figcaption style="margin-top: 10px; font-style: italic;">FIX THIS</figcaption> -->
+        </figure>
+        <br>
+
+        <br>
+        <h2>Putting diagrams to perspective in real-life</h2>
+
+        <p>I find it helpful to put diagrams into perspective when you have actual photos of hardware. Here's a summary below.</p>
+
+        <p>If you’ve seen pictures of Google’s promotion material for TPUs, you might have come across this image below.</p>
+
+        <br>
+        <figure style="text-align: center;">
+          <img src="images/tpu_racks.png" alt="TPU data movement visualized" width="auto" height="300" style="max-width: 100%; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">8 TPU Racks (TPUv4)</figcaption>
+        </figure>
+        <br>
+
+        <p>This is 8xTPU Pods where each unit is a 4x4x4 3D torus we saw above. Each row in a pod has 2 trays, meaning there's 8 TPU chips per row.</p>
+
+        <p>Here’s a single TPUv4 tray:</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/tpu_tray.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
+            <!-- <figcaption style="margin-top: 10px; font-style: italic;">FIX THIS</figcaption> -->
+        </figure>
+        <br>
+
+        <p>Note that the diagram is simplified to just one PCIe port, but on the actual tray there’s 4 PCIe ports(on the left)--one for each TPU.</p>
+
+        <p>And here’s a single chip below:</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/tpu_chip.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">TPUv4 Chip with ASIC in center + 4 HBM Stacks</figcaption>
+        </figure>
+        <br>
+
+        <p>The center piece is the ASIC and the surrounding 4 blocks are the HBM stacks. This is a TPU v4 we’re seeing, so it has 2 TensorCores inside, hence the total of 4 HBM stacks.</p>
+
+        <p>I couldn’t find the chip floorplan for TPUv4, so here’s one for TPUv4i which is similar except that it only has 1 TensorCore since it’s an inference chip.</p>
+
+        <br>
+        <figure style="text-align: center;">
+            <img src="images/tpuv4i_layout.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
+            <figcaption style="margin-top: 10px; font-style: italic;">(Source: TPUv4i Paper)</figcaption>
+        </figure>
+        <br>
+
+        <p>Notice how the CMEM takes up quite some space on the layout for TPUv4i.</p>
+
+        <br>
+        <h2>Acknowledgements</h2>
+        <p>Thank you to the Google TPU Research Cloud(TRC) for the TPU support.</p>
+
+
+
+        <br>
+        <h2>References</h2>
+        
+        (REFORMAT THESE!)<br><br>
+https://cloud.google.com/blog/products/compute/using-cloud-tpu-multislice-to-scale-ai-workloads
+https://arxiv.org/pdf/2105.04663
+https://gwern.net/doc/ai/scaling/hardware/2021-jouppi.pdf
+https://jax-ml.github.io/scaling-book/tpus/
+https://fleetwood.dev/posts/domain-specific-architectures#google-tpu
+https://hc2023.hotchips.org/assets/program/conference/day2/ML%20training/HC2023.Session5.ML_Training.Google.Norm_Jouppi.Andy_Swing.Final_2023-08-25.pdf
+https://cloud.google.com/tpu/docs/v4
+https://arxiv.org/abs/1704.04760
+https://arxiv.org/abs/2304.01433
+https://www.youtube.com/watch?v=0yPFBxkOKRY
+https://hc33.hotchips.org/assets/program/tutorials/HC2021.Google.Sameer%20Kumar.pdf
+https://hc32.hotchips.org/assets/program/tutorials/HC2020.Google.SameerKumarDehaoChen.v02.pdf
+https://blog.google/products/google-cloud/ironwood-tpu-age-of-inference/
+https://old.hotchips.org/hc31/HC31_T3_Cloud_TPU_Codesign.pdf
+https://www.youtube.com/watch?v=XkgtANeDrm8
+https://www.cs.ucla.edu/wp-content/uploads/cs/PATTERSON-10-Lessons-4-TPU-gens-CO2e-45-minutes.pdf
+https://personales.unican.es/vallejoe/Publications/C%C3%A1mara%20-%20TPDS'10%20-%20Twisted%20Torus%20Topologies%20for%20Enhanced%20Interconnection%20Networks.pdf
+https://gwern.net/doc/cs/hardware/2014-horowitz-2.pdf
+
+<br><br><br>
+<!--         
+        <p id="ref1">[1] <a href="https://github.com/srush/GPU-Puzzles" target="_blank">Sasha Rush, GPU Puzzles Github Repo</a></p>
+        <p id="ref2">[2] <a href="https://docs.nvidia.com/deeplearning/performance/dl-performance-gpu-background/index.html" target="_blank"> NVIDIA GPU Performance Guide</a></p>
+        <p id="ref3">[3] <a href="https://developer.nvidia.com/cuda-gpus" target="_blank">NVIDIA CUDA Compute Capability Specs</a></p>
+        <p id="ref4">[4] Programming Massively Parallel Processors(PMPP) Textbook, 4th ed. Hwu, Kirk, Hajj.</p> -->
+    
+        </main>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-core.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/autoloader/prism-autoloader.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    </body>
+    </html>
