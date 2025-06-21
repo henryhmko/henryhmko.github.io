@@ -118,7 +118,7 @@
         <br>
         <figure style="text-align: center;">
             <img src="images/pipeline_pointwise.gif" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-            <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (Source: "How to Scale Your Model")</figcaption>
+            <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (from "How to Scale Your Model" <a href="#ref4">[4]</a>)</figcaption>
         </figure>
         <br>
 
@@ -136,7 +136,7 @@
 
         <p>First, recall that traditional caches are designed to handle unpredictable memory access patterns. A program for one application can have vastly different memory access patterns with those from programs for other applications. In essence, caches allow hardware to be flexible and adapt to a wide range of applications. This is a large reason why GPUs are very flexible hardware (note: compared to TPUs).</p>
 
-        <p>However, cache accesses (and memory accesses in general) cost significant energy. Below is a rough estimate of energy costs for operations on a chip (45nm, 0.9V). The key takeaway here is that memory access and control takes up most of our energy and that arithmetic takes up significantly less.</p>
+        <p>However, cache accesses (and memory accesses in general) cost significant energy. Below is a rough estimate of energy costs for operations on a chip (45nm, 0.9V; <a href="#ref18">[18]</a>). The key takeaway here is that memory access and control takes up most of our energy and that arithmetic takes up significantly less.</p>
 
         <br>
         <figure style="text-align: center;">
@@ -165,7 +165,7 @@
         <br>
         <h3><span style="font-weight: 500;">TPUs and Energy Efficiency (TPUv4)</span></h3>
 
-        <p>The previous diagram for energy usage was not an accurate representation for TPUs, so here's the energy usage breakdown for TPUv4. Note that TPUv4 is 7nm and the 45nm is there for a comparison.</p>
+        <p>The previous diagram for energy usage was not an accurate representation for TPUs, so here's the energy usage breakdown for TPUv4. Note that TPUv4 is 7nm and the 45nm is there for a comparison (<a href="#ref3">[3]</a>, <a href="#ref16">[16]</a>).</p>
 
         <br>
         <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-end;">
@@ -224,7 +224,7 @@
         <br>
         <h3><span style="font-weight: 500;">Q. What's the difference between a "TPU Rack" vs a "TPU Pod" vs "TPU Slice?</span></h3>
 
-        <p>Different Google sources use them a bit differently and sometimes use "TPU Pods" and "TPU Slices" interchangeably. But for this article we'll stick with the definitions used in Google's TPU papers and in GCP's TPU documentation.</p>
+        <p>Different Google sources use them a bit differently and sometimes use "TPU Pods" and "TPU Slices" interchangeably. But for this article we'll stick with the definitions used in Google's TPU papers and in GCP's TPU documentation (<a href="#ref3">[3]</a>, <a href="#ref7">[7]</a>, <a href="#ref9">[9]</a>).</p>
 
         <ol>
             <li><span style="font-weight: 500;">TPU Rack:</span>
@@ -246,7 +246,7 @@
 
         <p>A single TPU Rack consists of 64 chips that are connected together through ICI and Optical Circuit Switching (OCS). In essence, we connect multiple trays together to emulate a system of 64 chips. This theme of putting together smaller parts to make a supercomputer continues to appear later.</p>
 
-        <p>Below is a diagram for a single TPUv4 Rack. It's a 4x4x4 3D torus where each node is a chip, and the arrows in blue are ICI while the lines on the faces are OCS.</p>
+        <p>Below is a diagram for a single TPUv4 Rack. It's a 4x4x4 3D torus where each node is a chip, and the arrows in blue are ICI while the lines on the faces are OCS (redrawn from <a href="#ref7">[7]</a>).</p>
 
         <br>
         <figure style="text-align: center;">
@@ -316,7 +316,7 @@
         </figure>
         <br>
 
-        <p>But, of course, optimal topologies would depend on the model and finding this is a job in itself as well. The TPUv4 paper also measured this to show how topology changes can accelerate throughput (Note: I'm not sure which LLM architecture the first row is referring to as it wasn't specified).</p>
+        <p>But, of course, optimal topologies would depend on the model and finding this is a job in itself as well. The TPUv4 paper<a href="#ref9">[9]</a> also measured this to show how topology changes can accelerate throughput (Note: I'm not sure which LLM architecture the first row is referring to as it wasn't specified).</p>
 
         <br>
         <figure style="text-align: center;">
@@ -334,7 +334,7 @@
 
         <p>Note that this is different from hard-wiring multiple nodes together to emulate noncontiguous slices. Since OCS is a switch instead of being hard-wired, there's much less physical wires across nodes, thus allowing for higher scalability (i.e. larger TPU Pod sizes).</p>
 
-        <p><mark style="background: #fff2cf;">This allows flexible node configuration as scale.</mark> For example, say there are three jobs we want to run on a single pod. Although naive scheduling would not allow this, OCS connections instead allow us to abstract away the position of nodes and view the entire pod as just a "bag of nodes".</p>
+        <p><mark style="background: #fff2cf;">This allows flexible node configuration as scale.</mark> For example, say there are three jobs we want to run on a single pod. Although naive scheduling would not allow this, OCS connections instead allow us to abstract away the position of nodes and view the entire pod as just a <mark style="background: #fff2cf;">"bag of nodes"</mark> (redrawn from <a href="#ref6">[6]</a>).</p>
 
         <br>
         <figure style="text-align: center;">
@@ -357,7 +357,7 @@
         <br>
         <figure style="text-align: center;">
             <img src="images/twisted_torus.png" alt="TPU data movement visualized" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
-            <figcaption style="margin-top: 10px; font-style: italic;">Regular vs Twisted Torus (Source: TPUv4 Paper)</figcaption>
+            <figcaption style="margin-top: 10px; font-style: italic;">Regular vs Twisted Torus (Source: TPUv4 Paper <a href="#ref9">[9]</a>)</figcaption>
         </figure>
         <br>
 
@@ -420,7 +420,7 @@
         <br>
         <figure style="text-align: center;">
             <img src="images/multipod_dcn.png" alt="TPU data movement visualized" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
-            <figcaption style="margin-top: 10px; font-style: italic;">Two Pods Connected Over DCN</figcaption>
+            <figcaption style="margin-top: 10px; font-style: italic;">Two Pods Connected Over DCN <a href="#ref1">[1]</a></figcaption>
         </figure>
         <br>
 
@@ -431,16 +431,16 @@
         <br>
         <figure style="text-align: center;">
             <img src="images/palm_train.gif" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-            <figcaption style="margin-top: 10px; font-style: italic;">TPU Pod Utilization for Training PaLM (Source: HotChips Presentation)</figcaption>
+            <figcaption style="margin-top: 10px; font-style: italic;">TPU Pod Utilization for Training PaLM <a href="#ref6">[6]</a></figcaption>
         </figure>
         <br>
 
 
         <p>Making this possible is difficult on its own, but what makes this more impressive is the focus on developer experience. Specifically, it's about focusing on the question of "How can we abstract the systems/HW part of model scaling as much as possible?".</p>
 
-        <p>Google's answer is to make the XLA compiler responsible for coordinating communication between chips at large scales. With the right flags given by researchers (i.e. Parallelism dimensions for DP, FSDP, TP, num slices, etc), the XLA compiler inserts the right hierarchical collectives for the TPU topology at hand (GSPMD; Xu, 2021). The goal is to make large scale training happen with as little code changes as possible.</p>
+        <p>Google's answer is to make the XLA compiler responsible for coordinating communication between chips at large scales. With the right flags given by researchers (i.e. Parallelism dimensions for DP, FSDP, TP, num slices, etc), the XLA compiler inserts the right hierarchical collectives for the TPU topology at hand (Xu et al, 2021: GSPMD <a href="#ref2">[2]</a>). The goal is to make large scale training happen with as little code changes as possible.</p>
 
-        <p>For example, here's a breakdown of an all-reduce operation across multiple slices from Google's blog.</p>
+        <p>For example, here's a breakdown of an all-reduce operation across multiple slices from Google's blog <a href="#ref1">[1]</a>.</p>
 
         <br>
         <figure style="text-align: center;">
@@ -451,7 +451,7 @@
 
         <p>This is to show that the XLA compiler takes care of communication collectives both between slices and within slices.</p>
 
-        <p>For a concrete example, there could be a TPU topology like below for training a model. The activation communication happens within a slice through ICI whereas gradient communications will happen across slices through DCN (i.e. across the DCN DP dim).</p>
+        <p>For a concrete example, there could be a TPU topology like below for training a model. The activation communication happens within a slice through ICI whereas gradient communications will happen across slices through DCN (i.e. across the DCN DP dim) <a href="#ref1">[1]</a>.</p>
 
         <br>
         <figure style="text-align: center;">
@@ -498,12 +498,12 @@
 
         <p>The center piece is the ASIC and the surrounding 4 blocks are the HBM stacks. This is a TPU v4 we’re seeing, so it has 2 TensorCores inside, hence the total of 4 HBM stacks.</p>
 
-        <p>I couldn’t find the chip floorplan for TPUv4, so here’s one for TPUv4i which is similar except that it only has 1 TensorCore since it’s an inference chip.</p>
+        <p>I couldn’t find the chip floorplan for TPUv4, so here’s one for TPUv4i which is similar except that it only has 1 TensorCore since it’s an inference chip <a href="#ref3">[3]</a>.</p>
 
         <br>
         <figure style="text-align: center;">
             <img src="images/tpuv4i_layout.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-            <figcaption style="margin-top: 10px; font-style: italic;">(Source: TPUv4i Paper)</figcaption>
+            <!-- <figcaption style="margin-top: 10px; font-style: italic;">(Source: TPUv4i Paper)</figcaption> -->
         </figure>
         <br>
 
