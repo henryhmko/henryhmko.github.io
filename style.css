@@ -222,6 +222,25 @@ code:not([class*="language-"]) {
     height: auto;
     display: block;
 }
+@media (min-width: 700px) {
+    .responsive-image {
+        max-width: 60%;
+        margin: 0 auto;
+    }
+/* <style>
+.responsive-image img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+    .responsive-image img {
+        max-width: 60%;
+    }
+}
+</style> */
 
 /* mobile stuff */
 @media screen and (max-width: 768px) {
