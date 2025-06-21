@@ -42,11 +42,16 @@
         <p>Here's the layout of a single TPUv4 chip:</p>
 
         <br><br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/single_chip.png" alt="chip diagram" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">TPU Single Chip + TensorCore</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/single_chip.png" alt="chip diagram" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">TPU Single Chip + TensorCore</figcaption>
+      </figure>
         <br>
+
 
         <p>In each chip, there's two TPU TensorCores, which are responsible for our compute. (Note: inference-specialized TPUs have only one TensorCore). Both TensorCores have shared memory units: CMEM(128MiB) and HBM(32GiB).</p>
 
@@ -104,9 +109,12 @@
         <p>Systolic array is a hardware design architecture consisting of a grid of interconnected processing elements (PE). Each PE performs a small computation (e.g. multiply and accumulate) and passes the results to neighboring PEs.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/systolic_arr.png" alt="systolic array diagram" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/systolic_arr.png" alt="systolic array diagram" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <p>The benefit of such a design is that once data is passed into a systolic array, additional control logic on how data should be processed is not required. Also, when given a large enough systolic array, there's no memory read/writes other than the input and output.</p>
@@ -116,10 +124,14 @@
         <p>Moreover, there's clear opportunities for pipelining to overlap computation with data movements. Here's a diagram below for a pipelined pointwise operation on a TPU.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/pipeline_pointwise.gif" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (from "How to Scale Your Model" <a href="#ref4">[4]</a>)</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/pipeline_pointwise.gif" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (from "How to Scale Your Model" <a href="#ref4">[4]</a>)</figcaption>
+      </figure>
         <br>
 
         <br>
@@ -139,10 +151,12 @@
         <p>However, cache accesses (and memory accesses in general) cost significant energy. Below is a rough estimate of energy costs for operations on a chip (45nm, 0.9V; <a href="#ref18">[18]</a>). The key takeaway here is that memory access and control takes up most of our energy and that arithmetic takes up significantly less.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/patterson_breakdown.png" alt="TPU data movement visualized" width="auto" height="150" style="margin-left:auto; margin-right: auto;">
-            <!-- <figcaption style="margin-top: 10px; font-style: italic;">Instruction Energy Breakdown (45nm, 0.9V)</figcaption> -->
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/patterson_breakdown.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 150px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <p>But what if your application is very specific and its computation/memory access patterns are highly predictable?</p>
@@ -168,14 +182,22 @@
         <p>The previous diagram for energy usage was not an accurate representation for TPUs, so here's the energy usage breakdown for TPUv4. Note that TPUv4 is 7nm and the 45nm is there for a comparison (<a href="#ref3">[3]</a>, <a href="#ref16">[16]</a>).</p>
 
         <br>
-        <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-end;">
+        <!-- <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-end;">
           <figure style="text-align: center; margin: 0;">
               <img src="images/patterson_breakdown_1.png" alt="TPU data movement visualized" width="auto" height="300">
               <figcaption style="margin-top: 10px; font-style: italic;">Energy per Operation (TPUv4, 7 nm)</figcaption>
           </figure>
           <figure style="text-align: center; margin: 0;">
               <img src="images/tpuv4_energy_breakdown.png" alt="Second image description" width="auto" height="400">
-              <!-- <figcaption style="margin-top: 10px; font-style: italic;">Second caption here</figcaption> -->
+          </figure>
+      </div> -->
+        <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-end; flex-wrap: wrap;">
+          <figure style="text-align: center; margin: 0; flex: 1 1 300px;">
+              <img src="images/patterson_breakdown_1.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 300px; width: auto; height: auto; display: block; margin: 0 auto;">
+              <figcaption style="margin-top: 10px; font-style: italic;">Energy per Operation (TPUv4, 7 nm)</figcaption>
+          </figure>
+          <figure style="text-align: center; margin: 0; flex: 1 1 300px;">
+              <img src="images/tpuv4_energy_breakdown.png" alt="Second image description" style="max-width: 100%; max-height: 400px; width: auto; height: auto; display: block; margin: 0 auto;">
           </figure>
       </div>
         <br>
@@ -193,10 +215,12 @@
         <h2><span style="font-weight: 500;">Tray Level (a.k.a "Board"; 4 chips)</span></h2>
         
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/tray.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
-            <!-- <figcaption style="margin-top: 10px; font-style: italic;">FIX THIS</figcaption> -->
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/tray.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 300px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <p>A single TPU tray consists of 4 TPU chips or 8 TensorCores (referred to as just "cores"). And each tray gets its own CPU Host (Note: For inference TPUs, one host accesses 2 trays since they only have 1 core per chip).</p>
@@ -249,10 +273,14 @@
         <p>Below is a diagram for a single TPUv4 Rack. It's a 4x4x4 3D torus where each node is a chip, and the arrows in blue are ICI while the lines on the faces are OCS (redrawn from <a href="#ref7">[7]</a>).</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/rack_ocs.png" alt="Simple thread hierarchy" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Single TPU Rack with OCS</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/rack_ocs.png" alt="Simple thread hierarchy" style="max-width: 100%; max-height: 400px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Single TPU Rack with OCS</figcaption>
+      </figure>
         <br>
 
         <p>This diagram, however, raises a couple questions. <em>Why is the OCS only used for the faces?</em> In other words, <em>what are the benefits of using OCS?</em> There's 3 large benefits and we'll cover the other two down below later.</p>
@@ -272,10 +300,14 @@
         <p>Note: older TPU generations (e.g. TPUv2, v3) and inference TPUs (e.g. TPUv5e, TPUv6e) have a 2D torus topology instead of a 3D torus like below. The TPUv7 "Ironwood", however, seems to be a 3D torus although it's promoted as an inference chip (Note: I'm only assuming from their promotional material).</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/torus_2d.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">2D Torus Topology</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/torus_2d.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 300px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">2D Torus Topology</figcaption>
+      </figure>
         <br>
 
         <br>
@@ -291,9 +323,9 @@
 
         <br>
         <figure style="text-align: center;">
-            <img src="images/full_pod.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-            <figcaption style="margin-top: 10px; font-style: italic;">Superpod for TPUv4 (64 Racks)</figcaption>
-        </figure>
+          <img src="images/full_pod.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Superpod for TPUv4 (64 Racks)</figcaption>
+      </figure>
         <br>
 
         <p>Note how each cube (i.e. a TPU Rack) is connected with each other through OCS. This also allows us to take slices of TPUs in a pod.</p>
@@ -310,19 +342,27 @@
         <p>For example, a cube (ex. 8x8x8) would be preferred for all-to-all communications, such as data parallelism or tensor parallelism, because it has the highest bisection bandwidth. However, a cigar shape (ex. 4x4x32) would be better for pipeline parallelism as it can communicate with sequential layers faster (assuming one layer fits in a sub-slice of 4x4 chips).</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/diff_topo.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Example TPU Topologies</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/diff_topo.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Example TPU Topologies</figcaption>
+      </figure>
         <br>
 
         <p>But, of course, optimal topologies would depend on the model and finding this is a job in itself as well. The TPUv4 paper<a href="#ref9">[9]</a> also measured this to show how topology changes can accelerate throughput (Note: I'm not sure which LLM architecture the first row is referring to as it wasn't specified).</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/diff_topo_fig.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Improvements in Throughput with Different Topologies</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/diff_topo_fig.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 300px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Improvements in Throughput with Different Topologies</figcaption>
+      </figure>
         <br>
 
         <p>We covered TPU Slices, but there's one important feature that contributes to a high operational stability of TPUs.</p>
@@ -337,10 +377,14 @@
         <p><mark style="background: #fff2cf;">This allows flexible node configuration as scale.</mark> For example, say there are three jobs we want to run on a single pod. Although naive scheduling would not allow this, OCS connections instead allow us to abstract away the position of nodes and view the entire pod as just a <mark style="background: #fff2cf;">"bag of nodes"</mark> (redrawn from <a href="#ref6">[6]</a>).</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/multijob.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Individual Jobs Can Treat TPU Racks in a Pod as "Bag of Nodes"</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/multijob.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Individual Jobs Can Treat TPU Racks in a Pod as "Bag of Nodes"</figcaption>
+      </figure>
         <br>
 
         <p>This increases pod utilization and possibly much easier maintenance in case of failed nodes. Google described this as <em>"Dead nodes have small blast radius."</em> However, I'm not sure how its liquid cooling would be impacted when only certain nodes have to be shut down.</p>
@@ -355,10 +399,14 @@
         <p>A notable example is going from a regular torus of a cigar shape into a twisted cigar torus as seen below.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/twisted_torus.png" alt="TPU data movement visualized" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Regular vs Twisted Torus (Source: TPUv4 Paper <a href="#ref9">[9]</a>)</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/twisted_torus.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 400px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Regular vs Twisted Torus (Source: TPUv4 Paper <a href="#ref9">[9]</a>)</figcaption>
+      </figure>
         <br>
 
         <p>The twisted torus case allows for faster communication between chips across the twisted 2D plane. This is especially useful for accelerating all-to-all communications.</p>
@@ -379,10 +427,14 @@
         <p>Our z axis will be our pipeline parallel(PP) dimension and our 2D TP dimension will be 4x4. In essence, assume each layer k lies at z=k and that each layer is sharded across 16 chips. Assume standard OCS connections (i.e. nearest-neighbor) if not explicitly drawn.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/twisted_scenario_1.png" alt="TPU data movement visualized" width="auto" height="600" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">4x4x16 Topology with TP + PP</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/twisted_scenario_1.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 600px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">4x4x16 Topology with TP + PP</figcaption>
+      </figure>
         <br>
 
         <p>We'll twist the 2D torus at each z=k, which makes communication between chips in each TP layer faster. Twisting along our PP dimension is unnecessary as they rely mostly on point-to-point communication.</p>
@@ -396,10 +448,14 @@
         <p>As an extension, we'll be adding a DP dimension of 4 to our previous scenario. This means there's 4 of scenario #1 models along the x axis.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/twisted_scenario_2.png" alt="TPU data movement visualized" width="auto" height="600" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">16x4x16 Topology with DP + TP + PP</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/twisted_scenario_2.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 600px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">16x4x16 Topology with DP + TP + PP</figcaption>
+      </figure>
         <br>
 
         <p>Notice how twisting the torus is limited to each TP dimension of each DP model (i.e. A 4x4 2D plane for each z=k given k=1…16). There is only a wraparound for the DP dimension so that each row becomes a horizontal ring of size 16.</p>
@@ -410,18 +466,25 @@
         <h2>Multi-Pod Level (a.k.a "Multislice"; 4096+ chips for TPUv4)</h2>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/multipod.png" alt="TPU data movement visualized" width="auto" height="200" style="margin-left:auto; margin-right: auto;">
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/multipod.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 200px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <p>The final level of TPU hierarchy is the Multi-pod level. This is where you can treat multiple pods as one large machine. However, the communication between pods is done through Data-Center Network (DCN), which has a lower bandwidth than ICI.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/multipod_dcn.png" alt="TPU data movement visualized" width="auto" height="400" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">Two Pods Connected Over DCN <a href="#ref1">[1]</a></figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/multipod_dcn.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 400px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Two Pods Connected Over DCN <a href="#ref1">[1]</a></figcaption>
+      </figure>
         <br>
 
         <p>Diagram showing how Multi-pod training can be configured</p>
@@ -429,10 +492,14 @@
         <p>This was how PaLM was trained. It took 56 days to train over 6144 TPUv4s (2 pods). Below you can see the TPU job assignments over 6 pods: green is for PaLM, red is no assignment, and the rest are other jobs. Note that each square is a 4x4x4 cube of TPUs.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/palm_train.gif" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">TPU Pod Utilization for Training PaLM <a href="#ref6">[6]</a></figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/palm_train.gif" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">TPU Pod Utilization for Training PaLM <a href="#ref6">[6]</a></figcaption>
+      </figure>
         <br>
 
 
@@ -443,10 +510,14 @@
         <p>For example, here's a breakdown of an all-reduce operation across multiple slices from Google's blog <a href="#ref1">[1]</a>.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/xla_reduce.jpg" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">XLA Reduction of All-Reduce Across Pods</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/xla_reduce.jpg" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">XLA Reduction of All-Reduce Across Pods</figcaption>
+      </figure>
         <br>
 
         <p>This is to show that the XLA compiler takes care of communication collectives both between slices and within slices.</p>
@@ -454,10 +525,12 @@
         <p>For a concrete example, there could be a TPU topology like below for training a model. The activation communication happens within a slice through ICI whereas gradient communications will happen across slices through DCN (i.e. across the DCN DP dim) <a href="#ref1">[1]</a>.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/multipod_many.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-            <!-- <figcaption style="margin-top: 10px; font-style: italic;">FIX THIS</figcaption> -->
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/multipod_many.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <br>
@@ -479,10 +552,12 @@
         <p>Here’s a single TPUv4 tray:</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/tpu_tray.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
-            <!-- <figcaption style="margin-top: 10px; font-style: italic;">FIX THIS</figcaption> -->
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/tpu_tray.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 300px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <p>Note that the diagram is simplified to just one PCIe port, but on the actual tray there’s 4 PCIe ports(on the left)--one for each TPU.</p>
@@ -490,10 +565,14 @@
         <p>And here’s a single chip below:</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/tpu_chip.png" alt="TPU data movement visualized" width="auto" height="300" style="margin-left:auto; margin-right: auto;">
             <figcaption style="margin-top: 10px; font-style: italic;">TPUv4 Chip with ASIC in center + 4 HBM Stacks</figcaption>
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/tpu_chip.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 300px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">TPUv4 Chip with ASIC in center + 4 HBM Stacks</figcaption>
+      </figure>
         <br>
 
         <p>The center piece is the ASIC and the surrounding 4 blocks are the HBM stacks. This is a TPU v4 we’re seeing, so it has 2 TensorCores inside, hence the total of 4 HBM stacks.</p>
@@ -501,10 +580,12 @@
         <p>I couldn’t find the chip floorplan for TPUv4, so here’s one for TPUv4i which is similar except that it only has 1 TensorCore since it’s an inference chip <a href="#ref3">[3]</a>.</p>
 
         <br>
-        <figure style="text-align: center;">
+        <!-- <figure style="text-align: center;">
             <img src="images/tpuv4i_layout.png" alt="TPU data movement visualized" width="auto" height="500" style="margin-left:auto; margin-right: auto;">
-            <!-- <figcaption style="margin-top: 10px; font-style: italic;">(Source: TPUv4i Paper)</figcaption> -->
-        </figure>
+        </figure> -->
+        <figure style="text-align: center;">
+          <img src="images/tpuv4i_layout.png" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+      </figure>
         <br>
 
         <p>Notice how the CMEM takes up quite some space on the layout for TPUv4i.</p>
