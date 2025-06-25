@@ -379,7 +379,7 @@
 
         <p>Note that this is different from hard-wiring multiple nodes together to emulate noncontiguous slices. Since OCS is a switch instead of being hard-wired, there's much less physical wires across nodes, thus allowing for higher scalability (i.e. larger TPU Pod sizes).</p>
 
-        <p><mark style="background: #fff2cf;">This allows flexible node configuration as scale.</mark> For example, say there are three jobs we want to run on a single pod. Although naive scheduling would not allow this, OCS connections instead allow us to abstract away the position of nodes and view the entire pod as just a <mark style="background: #fff2cf;">"bag of nodes"</mark> (redrawn from <a href="#ref6">[6]</a>).</p>
+        <p><mark style="background: #fff2cf;">This allows flexible node configuration at scale.</mark> For example, say there are three jobs we want to run on a single pod. Although naive scheduling would not allow this, OCS connections instead allow us to abstract away the position of nodes and view the entire pod as just a <mark style="background: #fff2cf;">"bag of nodes"</mark> (redrawn from <a href="#ref6">[6]</a>).</p>
 
         <br>
         <!-- <figure style="text-align: center;">
@@ -508,7 +508,7 @@
         <br>
 
 
-        <p>Making this possible is difficult on its own, but what makes this more impressive is the focus on developer experience. Specifically, it's about focusing on the question of "How can we abstract the systems/HW part of model scaling as much as possible?".</p>
+        <p>Making this possible is difficult on its own, but what makes this more impressive is the focus on developer experience. Specifically, it's about focusing on the question of <mark style="background: #fff2cf;">"How can we abstract the systems/HW part of model scaling as much as possible?".</mark></p>
 
         <p>Google's answer is to make the XLA compiler responsible for coordinating communication between chips at large scales. With the right flags given by researchers (i.e. Parallelism dimensions for DP, FSDP, TP, num slices, etc), the XLA compiler inserts the right hierarchical collectives for the TPU topology at hand (Xu et al, 2021: GSPMD <a href="#ref2">[2]</a>). The goal is to make large scale training happen with as little code changes as possible.</p>
 
@@ -604,7 +604,7 @@
         <br>
         <h2>References</h2>
 
-        <p id="ref1">[1] <a href="https://cloud.google.com/blog/products/compute/using-cloud-tpu-multislice-to-scale-ai-workloads" target="_blank">Google Blog: TPU Multi-Slice Trainng</a></p>
+        <p id="ref1">[1] <a href="https://cloud.google.com/blog/products/compute/using-cloud-tpu-multislice-to-scale-ai-workloads" target="_blank">Google Blog: TPU Multi-Slice Training</a></p>
         <p id="ref2">[2] <a href="https://arxiv.org/pdf/2105.04663" target="_blank">Xu, et al. "GSPMD: General and Scalable Parallelizaton for ML Computation Graphs"</a></p>
         <p id="ref3">[3] <a href="https://gwern.net/doc/ai/scaling/hardware/2021-jouppi.pdf" target="_blank">Jouppi et al. "Ten Lessons From Three Generations Shaped Google's TPUv4i"</a></p>
         <p id="ref4">[4] <a href="https://jax-ml.github.io/scaling-book/tpus/" target="_blank">How to Scale Your Model - TPUs</a></p>
