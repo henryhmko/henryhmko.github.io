@@ -371,7 +371,28 @@ With NSA's default configuration of
 
         <p>Tying this into pipeline optimization, all expensive HBM <=> VMEM transfers can be minimized to load only select tiles and skip the rest. And within each loop, each block within a tile has to be loaded sequentially but this is within the VMEM<=>VREG regime which is much faster.</p>
 
-        <p>But there's an interesting question to be asked: what is the "optimal" Tile Size?</p>
+        <br>
+        <h2>Q. What does a "VREG load with Dynamic Slice" mean?</h2>
+<!-- <br> -->
+        <figure style="text-align: center;">
+          <img src="images/pipeline_pointwise.gif" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (from "How to Scale Your Model" <a href="#ref4">[4]</a>)</figcaption>
+      </figure>
+<br>
+        <p>This is an interesting combination of how TPU memory pipelining is done on both the hardware and software level.</p>
+
+        <p>On the hardware level, TPU memory transfers are done in this order: HBM⇔VMEM⇔VREG⇔MXU/VPU. And Pallas provides an interesting abstraction where it pipelines the transfer of data from HBM⇔VMEM according to our scalar prefetch map before our kernel starts.</p>
+
+        <p>This means that we can assume our relevant input tiles(a.k.a <code>Ref</code>; e.g. <code>q_ref</code>) are already living on the VMEM when we write our kernel. When we call <code>q_ref[:]</code> within our kernel, that’s when a copy from VMEM⇔VREG is initiated.</p>
+
+        <p>However, we can use dynamic slicing on Refs to avoid copying the entire input tile to VREG, hence the “dynamically sliced VREG load”.</p>
+
+        <p>There are some caveats to this. Due to compiler restrictions, although the starting indices of your slice can be dynamic(i.e. runtime variables), your slice size must be static(i.e. compile time constants).</p>
+
+        <p>In the case of NSA, we are able to do this as our slice size is the selection block size, which is a fixed parameter.</p>
+
+<br>
+        <p>Given this context, there's an interesting question to be asked: what is the "optimal" tile size?</p>
 <br>
         <h2><span style="font-weight: 500;">Finding the Optimal Tile Size for Clustered Sparse Tiling</span></h2>
 
