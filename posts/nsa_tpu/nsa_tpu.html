@@ -260,13 +260,13 @@
         <p>But now there's a new challenge: dealing with NSA's strided blocks where many elements overlap between contiguous blocks.</p>
 
         <br>
-        <h2>Issue 2: Working with Strides in Pallas is Hard</h2>
+        <h2>Issue 2: Working with Overlapping Blocks in Pallas is Hard</h2>
 
         <p>Let's define the problem first. Assume the worst case scenario where all selected block indexes are contiguous. This becomes an issue because of two reasons:</p>
 <br>
         <figure style="text-align: center;">
           <img src="images/contig_blocks.png" alt="filler" style="max-width: 650px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Contiguous Selection Blocks</figcaption>
+          <figcaption style="margin-top: 10px; font-style: italic;">Case of Contiguous Selection Blocks</figcaption>
       </figure>
 <br>
         <ol>
@@ -307,16 +307,16 @@
 
         <p>We can use this bias directly to optimize pipeline efficiency. Given that one tile of loaded data covers one cluster of selected blocks, we can skip the loading of most tiles. This is allowed as contiguous blocks have high levels of overlap (e.g. block_size > stride; NSA block size=64, stride=16).</p>
 
-        <p>With NSA's default configuration of selection block_size=64, stride=16, and top_n=16, let's think about the worse-case scenario.</p>
+        <p>With NSA's default configuration of selection block_size=64, stride=16, and top_n=16, let's think about the worst-case scenario.</p>
 
         <br>
         <h2>What is the worst-case tile length? (i.e. largest tile)</h2>
 
         <p>The worst-case scenario is when all top_n blocks lie in a single cluster(i.e. All top_n blocks are contiguous). Since there is 75% overlap between contiguous blocks, all 16 blocks will lead to a tile size of (64*0.25 * 16) = 256. This will be the upper bound of our Bk dimension where Bk is the block size used for online softmax.</p>
 
-        <p>Recall that at one step we have q[G,H], K[H,Bk], V[H,Bk] of data per query in SRAM. That means we have ([16 * 128] + [128 * 256] + [128 * 256]) * 2(bf16) = 135KiB in SRAM. This is without query batching, so it's a bit large for GPUs, but TPUs have larger VMEMs that can afford multiple batches of this (Note: GPUs can afford pointer-based memory accesses, so this approach is not necessary).</p>
+        <p>Recall that at one step we have q[G,H], K[H,Bk], V[H,Bk] of data per query in SRAM. That means we have ([16 * 128] + [128 * 256] + [128 * 256]) * 2(bf16) = 135KiB in SRAM. This is without query batching, so it's a bit large for GPUs, but TPUs have larger VMEMs that can afford multiple batches of this (Note: GPUs can afford pointer-based memory accesses, so this approach is actually not necessary for them).</p>
 
-        <p>Tying this into pipeline optimization, all expensive HBM<->VMEM transfers can be minimized to load only select tiles and skip the rest. And within each loop, each block within a tile has to be loaded sequentially but this is within the VMEM<->VREG regime which is much faster.</p>
+        <p>Tying this into pipeline optimization, all expensive HBM <=> VMEM transfers can be minimized to load only select tiles and skip the rest. And within each loop, each block within a tile has to be loaded sequentially but this is within the VMEM<=>VREG regime which is much faster.</p>
 
         <p>But there's an interesting question to be asked: what is the "optimal" Tile Size?</p>
 <br>
@@ -326,11 +326,21 @@
 
         <p>We can use some quirks of NSA to pick the optimal tile size. First, NSA implies that many of their selected blocks will be clustered together (i.e. non-uniform distribution of selected blocks). This means we could very much skip most tiles since most of our selected blocks will be within a couple tiles. But, at the same time, we want each tile to be large enough such that it holds multiple selected blocks due to clustering.</p>
 
-        <p>In essence, this becomes a question of finding the smallest tile size that is still large enough to contain a single cluster of selected blocks.</p>
+        <p>There's three approximate scenarios:</p>
+        <ol>Given that selection block clusters span an average of X tokens and our we have Tile Size of T, <br>
+          <p>1. T < X : Redundant Memory Accesses</p>
+          <p>2. T >> X : Large Pipeline Bubbles + Low Arithmetic Intensity</p>
+          <p>3. T = X : Ideal Tile Size where a single fetch contains one cluster</p>
+        </ol>
 
-        <p>However, finding coverage ratio means we need to have access to the actual attention score distribution of p_slc as this is data-dependent. Depending on this spread we can pick out the optimal tile size that maximizes coverage while minimizing pipeline bubbles.</p>
+        <p>In essence, this becomes a question of finding the smallest tile size that is still large enough to contain the expected size of a single block cluster.</p>
 
-        <p>This is a short example of why I believe optimizing ML is a full stack problem that requires communication between the algorithm team and the performance team.</p>
+        <p>You might have noticed that knowing the distribution of the attention scores of p_slc is very important to get a good answer for this. This is true: the optimal tile size may be different depending on the spread of attention scores, locality of block cluster sizes, and also data modality. This is without, of course, harming pipeline efficiency or arithmetic intensity.</p>
+
+        <p>This is an example of why I believe large scale ML in the modern day is a full stack problem that no engineer or researcher can do alone. There's quite a lot of moving parts going on. And for natively-trained sparsity approaches like NSA, multiple pretraining runs are probably required just to explore and understanding what best approaches forward may be.</p>
+
+        <p>For now, we'll abstract this complexity away and just run with the blockwise-locality assumption that DeepSeek suggested.</p>
+
 <br>
 
         <p>Now we just have one more important step: generating the correct prefetch maps for an optimized pipeline performance.</p>
@@ -340,13 +350,13 @@
 
         <p>Efficiently generating a prefetch map for NSA is a difficult task in itself. This is mostly because of the dynamic sparsity of NSA along with the backward dependency of prefetch maps(i.e. we need to know in advance which blocks to fetch). So a naive implementation of this would be a nested for loop with reversed indexing due to the backward dependency. This would be expensive even considering the fact that a prefetch map is only generated once.</p>
 
-        <p><mark style="background: #fff2cf;">However, we could transform this seemingly sequential problem into a parallel one by spotting the associativity.</mark> For each position, instead of asking what the next valid position is, we can instead ask what the minimum of all positions to the right is.</p>
+        <p><mark style="background: #fff2cf;">However, we could transform this seemingly sequential problem into a parallel one by spotting the associativity.</mark> For each position, instead of asking what the next valid position to fetch is, we can instead ask what the minimum of all valid positions to the right is.</p>
 
         <p>We can now see this as a suffix minimum problem that can be solved with prefix scan on flipped arrays where our binary associative operator is minimum between the two operands.</p>
 
         <p>This approach the added advantage of mapping well to JAX: there's a jax.lax primitive for prefix scans(i.e. jax.lax.associative_scan) and is easily vmap-able, extending it for batched GQA heads or batched queries.</p>
 
-        <p>We've now solved prefetch maps for a dense-grid case, but recall that we're working with a sparse grid for NSA. This is to say whenever we don't want this block, we want to avoid loading it at all.</p>
+        <p>This covers prefetch maps for a dense-grid case, but recall that we're working with a sparse grid for NSA. This is to say whenever we don't want this block, we want to avoid loading it at all.</p>
 
         <p>We can use sentinels to solve this. In essence, we flag invalid indices(i.e. blocks we skip) with sentinels to prevent them from interfering with our scan operation.<br><br></p>
 
@@ -368,20 +378,20 @@ fused_computation.17 {
 }
 “
         </p>
-        <p>The constant, broadcast, select ops had to be added just to accommodate my choice of jnp.inf. I left it as is now since I thought this is more of a compiling time problem, but it got me curious whether large scale production systems consider this a problem.<br><br></p>
+        <p>The constant, broadcast, select ops had to be added just to accommodate my choice of jnp.inf. I left it as is now since I thought this doesn't increase my runtime(just increasing the time taking to compile), but got me curious whether large scale production systems consider this a problem.<br><br></p>
 
         <h3><span style="font-weight: 500;">Aside 2: Practical Implementation Notes</span></h3>
 
-        <p>This approach of generating prefetch maps is, ironically, more fit for GPUs than TPUs as GPUs can leverage parallel cores. Also, scan operations on TPUs burden VPUs, which we generally don't want. So careful attention should be spent on overlapping the prefix map generation with computation(i.e. Construct the prefix map for batch i+1 while computing batch i).</p>
+        <p>This approach of generating prefetch maps is, ironically, more fit for GPUs than TPUs as GPUs can leverage parallel execution models for doing parallel scans. Also, scan operations on TPUs burden VPUs, which we generally don't want especially when prefetch arrays get very long. So careful attention should be spent on overlapping the prefix map generation with computation(i.e. Construct the prefix map for batch i+1 while computing batch i).</p>
 <!-- <br> -->
         
         <p>Now, let's look at the results.</p>
 
         <br>
         <h1>Results</h1>
-
-        <h2><span style="font-weight: 500;">Vanilla case for seqlen=2048</span></h2>
-
+<br>
+        <h2><span style="font-weight: 500;">1. Vanilla case for seqlen=2048; Single Query</span></h2>
+<br>
         <figure style="text-align: center;">
           <img src="images/vectorized_2048_v5e.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
           <figcaption style="margin-top: 10px; font-style: italic;">Vectorized JAX (Baseline): 61.429 us</figcaption>
@@ -393,34 +403,43 @@ fused_computation.17 {
       </figure>
 
         <p>There's a ~2.5x speedup and an approximately (K * num_slc_blks*slc_blk_size * H * 4(FP32) * 2(for K_slc, V_slc) reduction in memory, as these intermediate matrices are no longer materialized.</p>
-        <p>As a disclaimer this is definitely cherry-picked and does not hold for long sequences....., which we'll analyze shortly later. But let's check correctness first.</p>
+        <p>As a disclaimer this is definitely cherry-picked and does not hold for long sequences... We'll analyze this shortly after, but let's check correctness first.</p>
 <br>
-        <h2><span style="font-weight: 500;">Correctness</span></h2>
+        <h2><span style="font-weight: 500;">2. Correctness</span></h2>
 
-        <p>This passes a jnp.allclose with rtol=1e-6, atol=1e-4 with input/outputs in BF16. This is because our online softmax accumulations were done in FP32.</p>
+        <p>This passes a jnp.allclose with our baseline using rtol=1e-6, atol=1e-4 with input/outputs in BF16. This was made possible because our online softmax and matmul accumulations were done in FP32.</p>
 
+        <p>Here's a summary plot I used a lot for debugging while coding the kernel:<br><br> </p>
+        <!-- <br> -->
         <figure style="text-align: center;">
-          <img src="images/kernel_vis_highres.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Pallas Kernel (Mine): 24.793 us</figcaption>
+          <img src="images/kernel_vis_highres.png" alt="filler" style="max-width: 950px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">rtol and atol over different axes(top) + more fine-grained per K / G head info (bottom)</figcaption>
       </figure>
 
-        <p>For our case, the absolute error is most relevant since our synthetic test data was initialized with a standard normal distribution.</p>
+        <p>For our case, the absolute error is most relevant since our synthetic test data was initialized with a standard normal distribution (Note: low variance centered around zero makes rtol spikes more likely; but atol for these elements are typically low, thus passing jnp.allclose).</p>
+<br>
+        <h3><span style="font-weight: 500;">Aside: Visualization Tooling Matters</span></h3>
 
-        <h1>Aside: Visualization Tooling is Important</h1>
+        <p>Debugging numerical stability issues would have been significantly more difficult without these plots. More time spent visualizing allowed debugging much easier and I'm curious what tools performance people in industry have to visualize the data and trace better.</p>
+        <p>Note: Treescope was a great tool to visualize matrices as well!<br><br></p>
 
-        <p>Debugging numerical stability issues would have been significantly more difficult without these plots. More time spent visualizing allowed debugging much easier.</p>
-
-        <p>But this is only a vanilla case for a short sequence length of 2048. The same trend will not continue since our Pallas kernel does not have query batching yet.</p>
+        <!-- <br> -->
+        <p>Let's go back to benchmarking. Previously, we've only tested a vanilla case for a short sequence length of 2048. The same trend will not continue since our Pallas kernel does not have query batching yet.</p>
 
         <p>Although it's a bit premature to benchmark long context without query batching implemented, let's see how it does.</p>
+<br>
+        <h2><span style="font-weight: 500;">3. Long Context Performance (...but only Single Query for now)</span></h2>
+<br>
+        <figure style="text-align: center;">
+          <img src="images/single_query_plot_highres.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">hi</figcaption>
+      </figure>
 
-        <h2><span style="font-weight: 500;">Long Context Performance (...but only Single Query for now)</span></h2>
-
-        <p>My kernel does not scale for long contexts and severely underuses hardware. The easy way out would be to say this because we're only doing single-query, but there's more nuances when we dig in.</p>
+        <p>My kernel does not scale for long contexts and severely underuses hardware. Let's think about why this is the case. The easy way out would be to say this because we're only doing single-query, but there's more nuances when we dig in.</p>
 
         <p>First, let's analyze the obvious culprit:</p>
 
-        <h3><span style="font-weight: 500;">MXU/VPU Underutilization</span></h3>
+        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 1. MXU/VPU Underutilization</span></h3>
 
         <p>Arithmetic intensity is quite low as our kernel is closer to a GEMV than a GEMM in a single-query scenario. Recall that TPUs perform matmuls on MXUs, which are 128x128 systolic arrays(until TPUv5e). Specifically, they perform a single [8x128]@[128,128] matmul per 8 cycles.</p>
 
@@ -428,13 +447,18 @@ fused_computation.17 {
 
         <p>Also, the way we handle VPU ops is problematic too. Any vector operation(i.e. online softmax operations) are done by VPUs, and they specifically want (8,128) tiles. However, our current online softmax accumulators are in [G, 1]=[16,1]. This means that each accumulator has to be padded to [16,256] to be passed into our VPU, hence limiting VPU bandwidth. Thus, query batching has to fix this VPU lane optimization issue too.</p>
 
-        <p>However, there's a more subtle experiment-setup issue:</p>
+        <p><br>However, there's a more subtle experiment-setup issue:</p>
 
-        <h3><span style="font-weight: 500;">Inductive Bias Not Reflected in Synthetic Data</span></h3>
+        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 2. Inductive Bias Not Reflected in Synthetic Data</span></h3>
 
         <p>Recall that our inductive bias for this kernel design was assuming that blocks will be clustered together as the NSA paper implies. This is, however, not reflected well in our synthetic data.</p>
 
-        <p>Above are the prefetch maps of three sequences(top_n=16). Ideally, we want to see most blocks clustered into a few chunks for each row. Instead, however, we only have 1~2 blocks per chunk ("Blue" = 1).</p>
+        <figure style="text-align: center;">
+          <img src="images/no_inductive_bias.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">Prefetch Maps of Different Seqlens; our synthetic data is not reflecting our kernel's inductive bias</figcaption>
+      </figure>
+<br>
+        <p>Above are the prefetch maps of three sequences(top_n=16). Ideally, we want to see most blocks clustered into a few chunks for each row. Instead, however, we only have 1~2 blocks per chunk.</p>
 
         <p>This means we have a terrible pipeline where most chunks will be loaded to process just 1~2 blocks, hence deteriorating arithmetic intensity.</p>
 
@@ -442,4 +466,117 @@ fused_computation.17 {
 
         <p>It left me wondering: <mark style="background: #fff2cf;">"What do the attention distribution patterns in a fully trained NSA look like?" and "How can we use that to design more efficient kernels?"</mark>. I'm curious if there's a direction of "distribution-aware" kernel designs.</p>
 
-        <p>This is partly why I was stuck on coming up
+        <p>This is partly why I was stuck on coming up with a good query batching scheme for NSA that’s fit for TPUs. Since each query dynamically selects a different set of selection blocks, a naive query batching scheme will most-likely lead to large pipeline inefficiencies.</p>
+
+        <p>There’s some puzzle pieces in my head about whether we could use some blockwise-locality pattern to design a variant of “union query tiling”(i.e. Queries in a batch share the same or nearby KV chunks). However, I think this will be heavily dependent on the attention distribution pattern or the actual training dynamics of NSA.</p>
+
+        <br>
+        <p>But to return to some concrete things again, here’s a final list of miscellaneous optimization and next steps to take.</p>
+
+        <h3><span style="font-weight: 500;"><br>Miscellaneous: SMEM Memory Optimization</span></h3>
+
+        <p>We can store scalar prefetch args in uint16 to save SMEM space and upcast on the fly.</p>
+
+        <p>Although modern TPUs have SMEM sizes of ~1 MiB which does not necessitate this, I was originally working with TPUv2s that have a SMEM capacity of 16 KiB, hence the fix.</p>
+<br>
+        <figure style="text-align: center;">
+          <img src="images/SMEM_err.png" alt="filler" style="max-width: 600px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
+          <figcaption style="margin-top: 10px; font-style: italic;">SMEM OOM for TPU v2</figcaption>
+      </figure>
+<br>
+
+        <p>Specifically, when I was testing with {seqlen=131,072; Bk=256, top_n=16}, the total size of our scalar prefetch argos alone is 24.8 KiB ((compute_mask[K, T_kv//Bk] + prefetch_map[K, T_kv//Bk] + compute_base_idx[K, T_kv//Bk] + global_slc_idx[K, top_n]) * 4(FP32)) = 24.832 KiB).</p>
+
+        <p>We can do a small optimization of storing the compute_mask, prefetch_map, and compute_base_idx in uint16 and upcast to int32 as needed (Note: indexes must be int32 in Pallas, so upcasting is a necessity).</p>
+
+        <p>The global_slc_idx should be kept at int32 as the representable range of uint16 is [0, 65,536) and, thus is not able to accommodate indices for long sequences. For a similar reason, downcasting other arguments to uint8 is not possible as it leads to integer overflow.</p>
+
+        <p>This reduces our total SMEM usage to 12.54 KiB (3*(K * T_kv//Bk) * 2(uint16) + (K * T_kv//Bk) * 4(FP32) = 12.544 KiB).</p>
+
+
+        <h2><span style="font-weight: 500;"><br>Current Limitations and Future Steps</span></h2>
+        <br>
+        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 1. Fix Block Stride Edge Case</span></h3>
+        <p>My current kernel has a critical edge case: it does not account for when selection blocks lie between the fixed boundary of two tiles.</p>
+        <p>- Potential approach: User 'rdyro' from JAX discord suggested using manual DMA from HBM to design my own memory pipeline.</p>
+<br>
+        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 2. Changing Selection Block Size, Compression Block Size, and Stride</span></h3>
+        <p>Although my NSA JAX baseline uses the default setting(cmp_blk_size=32, slc_blk_size=64, stride=16, top_n=16) from the NSA paper, my TPU kernel implementation uses slightly different values(cmp_blk_size=64, slc_blk_size=128, stride=32, top_n=8).</p>
+        <p>This was to accomodate for hardware utilization(e.g. MXU layout is 128x128), token budget consistency(keep slc_blk_size * top_n consistent), and information overlap granularity (keep overlap factor for contiguous selection blocks to be ¾).</p>
+        <p>However, this could change training dynamics completely as the same fine-grained information may be lost. For example, a smaller selection block size may allow the model to extract only a few tokens around the "important" part whereas a large selection block size may also include irrelevant tokens.</p>
+
+        <p>My guess is that this could lead the model to be less performant on fine-grained recall tasks(e.g. needle in a haystack) where a fine-grainedness of tokens is important.</p>
+<br>
+        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 3. Design an Effective Query Batching Scheme</span></h3>
+        <p>Query batching has two large issues to think about:</p>
+        <p>&nbsp;&nbsp;&nbsp;&nbsp a. Overhead of computing prefetch maps due to dynamic sparsity</p>
+        <p>&nbsp;&nbsp;&nbsp;&nbsp b. Naive query batching does not guarantee a sparse prefetch map(e.g. query 0 ~ 16 could each select top_n number of selection blocks where no overlaps occur).</p>
+        <p>The idea of union query tiling I was thinking above came from wondering whether if there's a way we can batch queries that attend to similar selection tokens. If so, then we could take the union of necessary selected blocks and find optimal tile sizes based on this. But this seemed like a stretch, especially without looking at concrete attention distributions. I'll have to give this more thought, but please help me out if you have any ideas!</p>
+
+
+        <h2><span style="font-weight: 500;"><br>Closing</span></h2>
+
+        <p>This was a fun project to work on, and it was a lot more challenging than I expected. I want to take a look at distributed kernels next as I think that's where TPUs shine even more.</p>
+
+        <br><br><br>
+        <h2>References</h2>
+
+        <p id="ref1">[1] <a href="https://cloud.google.com/blog/products/compute/using-cloud-tpu-multislice-to-scale-ai-workloads" target="_blank">Google Blog: TPU Multi-Slice Training</a></p>
+        <p id="ref2">[2] <a href="https://arxiv.org/pdf/2105.04663" target="_blank">Xu, et al. "GSPMD: General and Scalable Parallelizaton for ML Computation Graphs"</a></p>
+        <p id="ref3">[3] <a href="https://gwern.net/doc/ai/scaling/hardware/2021-jouppi.pdf" target="_blank">Jouppi et al. "Ten Lessons From Three Generations Shaped Google's TPUv4i"</a></p>
+        <p id="ref4">[4] <a href="https://jax-ml.github.io/scaling-book/tpus/" target="_blank">How to Scale Your Model - TPUs</a></p>
+        <p id="ref5">[5] <a href="https://fleetwood.dev/posts/domain-specific-architectures#google-tpu" target="_blank">Domain Specific Architectures for AI Inference - TPUs</a></p>
+        <p id="ref6">[6] <a href="https://hc2023.hotchips.org/assets/program/conference/day2/ML%20training/HC2023.Session5.ML_Training.Google.Norm_Jouppi.Andy_Swing.Final_2023-08-25.pdf
+          " target="_blank">HotChips 2023: TPUv4</a></p>
+        <p id="ref7">[7] <a href="https://cloud.google.com/tpu/docs/v4
+          " target="_blank">Google Cloud Docs: TPUv4</a></p>
+        <p id="ref8">[8] <a href="https://arxiv.org/abs/1704.04760
+          " target="_blank">Jouppi et al. "In-Datacenter Performance Analysis of a Tensor Processing Unit" -- TPU origins paper</a></p>
+        <p id="ref9">[9] <a href="https://arxiv.org/abs/2304.01433" target="_blank">Jouppi et al. "TPU v4"-- TPUv4 paper</a></p>
+        <p id="ref10">[10] <a href="https://www.youtube.com/watch?v=0yPFBxkOKRY
+          " target="_blank">PaLM training video</a></p>
+        <p id="ref11">[11] <a href="https://hc33.hotchips.org/assets/program/tutorials/HC2021.Google.Sameer%20Kumar.pdf
+          " target="_blank">HotChips 2021: "Challenges in large scale training of Giant Transformers on Google TPU machines"</a></p>
+        <p id="ref12">[12] <a href="https://hc32.hotchips.org/assets/program/tutorials/HC2020.Google.SameerKumarDehaoChen.v02.pdf
+          " target="_blank">HotChips 2020: "Exploring Limits of ML Training on Google TPUs"</a></p>
+        <p id="ref13">[13] <a href="https://blog.google/products/google-cloud/ironwood-tpu-age-of-inference/
+          " target="_blank">Google Blog: Ironwood</a></p>
+        <p id="ref14">[14] <a href="https://old.hotchips.org/hc31/HC31_T3_Cloud_TPU_Codesign.pdf
+          " target="_blank">HotChips 2019: "Cloud TPU: Codesigning Architecture and Infrastructure"</a></p>
+        <p id="ref15">[15] <a href="https://www.youtube.com/watch?v=XkgtANeDrm8
+          " target="_blank">ETH Zurich's Comp Arch Lecture 28: Systolic Array Architectures</a></p>
+        <p id="ref16">[16] <a href="https://www.cs.ucla.edu/wp-content/uploads/cs/PATTERSON-10-Lessons-4-TPU-gens-CO2e-45-minutes.pdf
+          " target="_blank">Patterson presentation: "A Decade of Machine Learning Accelerators: Lessons Learned and Carbon Footprint"</a></p>
+        <p id="ref17">[17] <a href="https://personales.unican.es/vallejoe/Publications/C%C3%A1mara%20-%20TPDS'10%20-%20Twisted%20Torus%20Topologies%20for%20Enhanced%20Interconnection%20Networks.pdf
+          " target="_blank">Camara et al. "Twisted Torus Topologies for Enhanced Interconnection Networks."</a></p>
+        <p id="ref18">[18] <a href="https://gwern.net/doc/cs/hardware/2014-horowitz-2.pdf
+          " target="_blank">Horowitz article: "Computing's Energy Problem(and what we can do about it)"</a></p>
+
+
+
+<br><br><br>
+<!--         
+        <p id="ref1">[1] <a href="https://github.com/srush/GPU-Puzzles" target="_blank">Sasha Rush, GPU Puzzles Github Repo</a></p>
+        <p id="ref2">[2] <a href="https://docs.nvidia.com/deeplearning/performance/dl-performance-gpu-background/index.html" target="_blank"> NVIDIA GPU Performance Guide</a></p>
+        <p id="ref3">[3] <a href="https://developer.nvidia.com/cuda-gpus" target="_blank">NVIDIA CUDA Compute Capability Specs</a></p>
+        <p id="ref4">[4] Programming Massively Parallel Processors(PMPP) Textbook, 4th ed. Hwu, Kirk, Hajj.</p> -->
+    
+        </main>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-core.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/autoloader/prism-autoloader.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/line-numbers/prism-line-numbers.min.js"></script>
+    </body>
+    </html>
+
+        
+
+
+
+        
+
+
+        
+
+        
+
+
