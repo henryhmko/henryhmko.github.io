@@ -31,10 +31,10 @@
 
         <p>Let me first convince you why NSA is great for GPUs.</p>
 
-        <br>
-        <h1>Why NSA is Great for GPUs</h1>
-        <h4><span style="font-weight: 500;">TLDR: Dynamic sparsity through pointer-based memory loads + High TensorCore Util by Design</span></h4>
-<br>
+        <br><br>
+        <h2>Why NSA is Great for GPUs</h2>
+        <h4><span style="font-weight: 500;"><mark style="background: #fff2cf;">TLDR: Dynamic sparsity through pointer-based memory loads + High TensorCore Util by Design</mark></span></h4>
+<!-- <br> -->
         <h3><span style="font-weight: 500;">1. Dynamic Sparsity</span></h3>
 
         <p>Dynamic sparsity is at the heart of NSA. Recall that NSA first computes the importance score, picks top-K most important blocks, then iterates on those selected KV blocks in the top-K order. In other words, we do not know which blocks to iterate over until we compute the top-K.</p>
@@ -43,7 +43,7 @@
         <p>Also, NSA's top-K operation can be done on GPUs with parallel bitonic sort, thus providing a natural mapping as well.</p>
 <br>
         <h3><span style="font-weight: 500;">2. High TensorCore Utilization by Design</span></h3>
-
+<br>
         <figure style="text-align: center;">
           <img src="images/nsa_original_kernel.png" alt="filler" style="max-width: 100%; max-height: 400px; width: auto; height: auto; display: block; margin: 0 auto;">
           <figcaption style="margin-top: 10px; font-style: italic;">Original NSA Kernel</figcaption>
@@ -51,30 +51,51 @@
         
         <p><br>NSA uses a Group Tiling scheme where the outer loop is on the number of GQA groups(i.e. A single query tile is size [G, H] where G is the number of heads per group and H is head dimension).</p>
 
-        <p>The original paper talks about memory bandwidth benefits(i.e. coalesced KV block loads since all query heads within a group share KV blocks), but this design extends to systematically enforce high TensorCore Utilization.</p>
+        <p>The original paper talks about memory bandwidth benefits(i.e. coalesced KV block loads since all query heads within a group share KV blocks), but this design extends to systematically preventing GEMVs, therefore increasing TensorCore Utilization.</p>
 
-        <p>This is because TensorCores are activated when we at least have dimensions of 8+ and preferably 16+ (Note: this is becoming much larger for Blackwell GPUs ). This means naive query batching without Group Tiling can easily be nerfed to GEMVs instead of GEMMs, thus dropping TensorCore utilization. Group Tiling systematically prevents this as even a single query batch already has [16, H]@[H,Bk]. This sort of defensive programming is one of the many reasons I like NSA.</p>
+        <p>This is because TensorCores are activated when we at least have dimensions of 8+ and preferably 16+. This means naive query batching without Group Tiling can easily be nerfed to GEMVs instead of GEMMs if a tile is not large enough. Group Tiling systematically prevents this as even a single query batch already has [16, H]@[H,Bk]. This sort of defensive programming is one of the many reasons I like NSA.</p>
 
         <p>But let's now see how this is difficult for TPUs.</p>
 
         <br>
-        <h1>Why NSA is Difficult for TPUs</h1>
-        <h4><span style="font-weight: 500;">TLDR: We don't have any Pros from the GPU section except the contiguous token blocks.</span></h4>
+        <h2>Why NSA is Difficult for TPUs</h2>
+        <h4><span style="font-weight: 500;"><mark style="background: #fff2cf;">TLDR: We don't have any Pros from the GPU section except the contiguous token blocks.</mark></span></h4>
 
         <p>Dynamic sparsity is quite difficult on all levels of the TPU stack: JAX/XLA, Pallas, and TPUs. Jitted code using JAX/XLA are not friendly towards runtime variables and dynamic branching, which NSA both has. Moreover, Pallas's programming model enforces a fixed, lexicographical traversal through data which is directly unfavorable towards NSA's top-K based dynamic traversal. And finally, TPUs prefer large and dense blocks rather than thin slices.</p>
+
 <br>
-        <p>Before we dive into the implementation, one small fix is required.</p>
+        <p>Now that I'm done complaining, let's dive into the implementation. But before we do so, one small fix is required.</p>
 <br>
         <h2>Fixing Equation 9</h2>
-        <p>Equation 9 in the paper has an error. It’s meant to do block-wise pooling for cases when the block size used in the compression branch differs from that of the selection branch.</p>
+        
+<p>
+    <span class="math-indent">
+        \[
+        \mathbf{p}_{t}^{\text{slc}}[j] \;=\;
+        \sum_{m=0}^{\tfrac{l'}{d}-1} \;
+        \sum_{n=0}^{\tfrac{l}{d}-1}
+        \mathbf{p}_{t}^{\text{cmp}}\!\left[\tfrac{l'}{d}j - m - n\right]
+        \]
+    </span>
+</p>
+        <p>Equation 9 in the paper has an error. Its purpose is to do block-wise pooling for cases when the block size used in the compression branch differs from that of the selection branch.</p>
 
-        <p>However, its index calculations seem to be off and it could also be simplified much further given the assumptions that NSA provides. First, NSA assumes a unified stride value. Secondly, it also assumes a divisibility constraint where block sizes from both branches must be divisible by the stride (l%d == 0 & l’%d ==0). This means all blocks – regardless of the branch – are aligned with the stride grid. And concretely, NSA’s original setup follows these assumptions (d=16, l=32, l’=64).</p>
+        <p>However, its index calculations are off and it could also be simplified much further given the assumptions that NSA provides. First, NSA assumes a unified stride value. Secondly, it also assumes a divisibility constraint where block sizes from both branches must be divisible by the stride \((l \bmod d = 0 \text{ and } l' \bmod d = 0)\). This means all blocks – regardless of the branch – are aligned with the stride grid. And concretely, NSA’s original setup follows these assumptions \((d = 16, l = 32, l' = 64)\).</p>
 
         <p>We can rewrite Eq.9 into standard blockwise pooling with this. Here’s the corrected version:</p>
 
-        (WRITE THE MATH)
+<p>
+    <span class="math-indent">
+        \[
+        \mathbf{p}_{t}^{\text{slc}}[j] \;=\;
+        \sum_{n=0}^{\left\lfloor \tfrac{\,l'-l\,}{d} \right\rfloor}
+        \mathbf{p}_{t}^{\text{cmp}}[j+n]
+        \]
+    </span>
+</p>
 
-        <br><br>
+
+        <br>
         <h2>XLA-Unfriendly JAX Version (Naive)</h2>
 
         <p>Before we even start writing kernels, however, we need to verify if one is even needed at all.</p>
@@ -92,7 +113,7 @@
 <!-- <br> -->
         
         <p>Below is the code responsible for the majority of the trace.</p>
-(TODO: FIX CODE)
+
         <pre class="line-numbers"><code class="language-python">with jax.named_scope("Build K_slc, V_slc"):
    K_slc = K_orig[
        jnp.arange(K)[:, None, None],  # [K,     None, None]
@@ -113,7 +134,7 @@
 
         <p>Instead, we can change this to explicitly gather selected elements with vmap:</p>
 <br>
-(TODO: FIX CODE)
+
         <pre class="line-numbers"><code class="language-python">def gather_slc(idx, orig_mat):
    # orig_mat [K T H]
    # idx      [topn*l' K]
@@ -134,23 +155,23 @@
         <h2>Vectorized JAX Baseline of NSA's Selection Branch</h2>
         <!-- <br> -->
 
-        <p><br>Vectorizing and performant indexing alone already gives us ~286x performance boost. This is not surprising as clean Gathers can give us speedups of 1~2 orders of magnitude.</p>
+        <p><br><mark style="background: #fff2cf;">Vectorizing and performant indexing alone already gives us ~286x performance boost.</mark> This is not surprising as clean Gathers can give us speedups of 1~2 orders of magnitude.</p>
 
         <figure style="text-align: center;">
           <img src="images/vectorized_2048_v5e.png" alt="filler" style="max-width: 850px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
           <figcaption style="margin-top: 10px; font-style: italic;">Vectorized, XLA-Friendly Version (seqlen=2048)</figcaption>
       </figure>
       
-        <p><br>But notice how the majority of the time is still spent on building K_slc and V_slc matrices. Moreover, it's also spiking memory usage as these matrices are materialized.</p>
+        <p><br>But notice how the majority of the time is still spent on building \(K_{\text{slc}}\) and \(V_{\text{slc}}\) matrices. Moreover, it's also spiking memory usage as these matrices are materialized.</p>
 
         <p>This necessitates the need for a fused kernel for the following reasons:</p>
-
+<br>
         <ol>
-          <h3>1. Unnecessary memory burden for materializing K_slc, V_slc</h3>
-          <p>- We only need K_slc, V_slc to get the output, O_slc</p>
+          <h3><span style="font-weight: 500;">1. Unnecessary memory burden for materializing \(K_{\text{slc}}\), \(V_{\text{slc}}\)</span></h3>
+          <p>- We only need \(K_{\text{slc}}\), \(V_{\text{slc}}\) to get the output, \(O_{\text{slc}}\)</p>
           <p>- Even if we might need them, it's faster to rematerialize them on the fly than to be memory BW bound<br><br></p>
           
-          <h3>2. XLA's Gather op runs on VPUs and is memory BW bound</h3>
+          <h3><span style="font-weight: 500;">2. XLA's Gather op runs on VPUs and is memory BW bound</span></h3>
           <p>- A rule of thumb for TPUs is to maximize MXU ops and minimize/overlap VPU ops.</p>
         </ol>
 
@@ -161,7 +182,7 @@
 
         <p>Pallas is the kernel language for JAX. It's still an experimental framework and it's an interesting mix of Triton and JAX.</p>
 
-        <p>One key characteristic of Pallas is using tiles as natural units. I like this a lot since unlike graphics, tiling serves as the universal intuition behind ML: we think in terms of blocked MMA, coalescing memory load of blocks, etc.<br><br></p>
+        <p>One key characteristic of Pallas is using tiles as natural units. I like this a lot since unlike graphics, tiling serves as the universal intuition behind ML: we think in terms of blocked MMA, coalescing blocked memory loads, and so on.<br><br></p>
 
         <h3><span style="font-weight: 500;">Aside: Tiling Philosophy Trends</span></h3>
 
@@ -180,13 +201,14 @@
             <li><strong>Grid</strong>
                 <br>- Program ID of each kernel (i.e. number of subproblems or kernels launched)
             </li>
+            <br>
             <li><strong>BlockSpec</strong>
                 <br> - Defines which section of the array is relevant for a given grid indice(i.e. program ID).
             </li>
         </ol>
         <br>
 <!-- highlight -->
-        <p>Hence, TPU programming can be seen as a mapping and dataflow problem where your job is to find the optimal data sharding that consistently feeds streams of data to the systolic arrays(MXU).</p>
+        <p>Hence, <mark style="background: #fff2cf;">TPU programming can be seen as a mapping and dataflow problem where your job is to find the optimal data sharding that consistently feeds streams of data to the systolic arrays(MXU).</mark></p>
 
         <p>However, recall that NSA is sparse. Then how do we deal with sparsity in Pallas TPU?</p>
 
@@ -209,7 +231,7 @@
         <br>
         <h2>Issue 1: Non-Monotonic Top-K Traversal</h2>
 
-        <p>The original NSA algorithm's selection branch first selects top-k blocks and then chooses to traverse through K_orig, V_orig in the order of top-k blocks. This means that we won't have sorted block indices. This is not a problem on GPUs as each kernel can be assigned a block and memory accesses can be done in parallel.</p>
+        <p>The original NSA algorithm's selection branch first selects top-k blocks and then chooses to traverse through \(K_{\text{orig}}\), \(V_{\text{orig}}\) in the order of top-k blocks. This means that we won't have sorted block indices. This is not a problem on GPUs as each kernel can be assigned a block and memory accesses can be done in parallel.</p>
 
         <p>Such is not the case for the TPU. Recall that TPUs are closer to highly sequential chips and the Pallas programming model reflects this. In fact, Pallas enforces this by iterating through the grid in lexicographical order, thus restricting any access to previous grid blocks. This has direct implications on the original algorithm as we can't traverse the top-k selected blocks if they are not monotonically increasing(e.g. top_k_indexes = [7,6,1,2] traversal goes against Pallas programming model).</p>
 
@@ -219,7 +241,7 @@
         <h2><span style="font-weight: 500;">Solution: Use Order Invariance of Online Softmax</span></h2>
 (INSERT softmax math)
 
-        <p>Online softmax is order invariant. Specifically, it does not matter which order we traverse or process our blocks in. This allows us to reduce the original problem of dynamic, non-monotonic top-k indexing into a normal sparse attention problem. We can simply sort the selected blocks and traverse in that order. And sorting is affordable as its only done on top-n elements, where top-n is extremely small (e.g. NSA paper used top-n=16).</p>
+        <p>Online softmax is order invariant. Specifically, it does not matter which order we traverse or process our blocks in. <mark style="background: #fff2cf;">This allows us to reduce the original problem of dynamic, non-monotonic top-k indexing into a normal sparse attention problem.</mark> We can simply sort the selected blocks and traverse in that order. And sorting is affordable as its only done on top-n elements, where top-n is extremely small (e.g. NSA paper used top_n=16).</p>
 
         <p>This works as intended on our FP32 kernel, but has important numerical stability implications in lower dtypes (especially FP8 and below).</p>
 <br>
@@ -227,33 +249,41 @@
 
         <h3><span style="font-weight: 500;">Aside: Is Online Softmax Truly Order Invariant?</span></h3>
 
-        <p>Online softmax may seem order invariant, but order matters especially for lower dtypes.</p>
+        <p><mark style="background: #fff2cf;">Online softmax may seem order invariant, but order matters especially for lower dtypes.</mark></p>
 
         <p>Let's assume the worst-case scenario where variance in attention scores are large(i.e. difference between largest selected block and smallest selection block is large).<br><br></p>
 
 
         <h3><span style="font-weight: 500;">Case 1: Descending Order Traversal (original NSA)</span></h3>
 
-        <p>This is generally more numerically stable. The global maximum is encountered early, which means subsequent iterations avoid renormalizations. Also, the scaling factor alpha=exp(m_prev - m_curr) remains at 1 and all exponentials are bounded by 1 as exp(x - m_max) is always negative.</p>
+        <p>
+This is generally more numerically stable. The global maximum is encountered early, which means subsequent iterations avoid renormalizations. Also, the scaling factor \(\alpha = \exp(m_{\text{prev}} - m_{\text{curr}})\) remains at 1 and all exponentials are bounded by 1 since \(\exp(x - m_{\max}) \leq 1\).
+</p>
 
-        <p>The only issue is underflow due to exp(x - m_max) resulting in an exponential with a large negative value. This is not an issue for FP32/BF16, but for FP8/FP4 this will frequently result in underflow and thus "wipe out" previous output accumulations.</p>
+<p>
+The only issue is underflow due to \(\exp(x - m_{\max})\) resulting in an exponential with a large negative argument. This is not an issue for FP32/BF16, but for FP8/FP4 this will frequently result in underflow and thus “wipe out” previous output accumulations.
+</p>
 
-        <p>However, this is still ideal as it avoids underflow for the largest score, thus resembling a kind of one-hot encoding of softmax. This is to say that it still preserves the purpose of softmax: allocating high scores for important blocks.<br><br></p>
-
+<p>
+However, this is still ideal as it avoids underflow for the largest score, thus resembling a kind of one-hot encoding of softmax. This is to say that it still preserves the purpose of softmax: allocating high scores for important blocks.
+</p>
+<br>
 
         <h3><span style="font-weight: 500;">Case 2: Ascending Order Traversal</span></h3>
 
-        <p>This is the opposite scenario. Each block includes a new maximum, so we're systematically forced to apply renormalization each step where alpha=exp(m_prev - m_curr) < 1. This repeated downscaling could lead to vanishing values. This isn't ideal as we have mechanisms to protect against overflow(i.e. exp(m_curr - m_global)), but not against underflow.</p>
+        <p>
+This is the opposite scenario. Each block includes a new maximum, so we're systematically forced to apply renormalization at each step where \(\alpha = \exp(m_{\text{prev}} - m_{\text{curr}}) < 1\). This repeated downscaling could lead to vanishing values. This isn't ideal, as we have mechanisms to protect against overflow (i.e. \(\exp(m_{\text{curr}} - m_{\text{global}})\)), but not against underflow.
+</p>
 
-        <p>This case is especially worse for FP8/FP4 as we might "wipe out" before we reach the maximum, which is the value we want to assign as the highest softmax score.</p>
+        <p>This case is especially worse for FP8/FP4 as we might "wipe out" accumulated results before we reach the maximum, which is the value we want to assign as the highest softmax score.</p>
 
         <p>The main distinction between the two cases is whether underflows meddle with our original purpose of softmax or not.</p>
 
-        <p>This is why the design of intermediate accumulation and renormalization requires careful codesign of three factors: dtype choice, renormalization timing (per-step or at the end), block size, and total sequence length(i.e. Total number of blocks).<br><br></p>
+        <p><mark style="background: #fff2cf;">This is why the design of intermediate accumulation and renormalization requires careful codesign of three factors: dtype choice, renormalization timing (per-step or at the end), block size, and total sequence length(i.e. Total number of tiles).</mark><br><br></p>
 
         <h3><span style="font-weight: 500;">Experiment Proposal:</span></h3>
 
-        <p>An interesting experiment would be to show a sequence length(8K ~ 1M) vs error accumulation plot with 4 lines(1. BF16 & single normalization, 2. BF16 & per-step normalization, 3. FP8 & single normalization, 4. FP8 & per-step normalization). Another plot could be the same but with differing block sizes. This won't be trivial since different hardware makes different choices in which dtypes to use to accumulate specific operations, thus careful tracking is required. Moreover, experiments with longer sequence length will also have to factor dtypes for reduction operations(e.g. reduce-scatter) across multiple chips.</p>
+        <p>An interesting experiment would be to show a sequence length(8K ~ 1M) vs error accumulation plot with 4 lines(1. BF16 & single normalization, 2. BF16 & per-step normalization, 3. FP8 & single normalization, 4. FP8 & per-step normalization). Another plot could be the same but with differing tile sizes. This won't be trivial since different hardware makes different choices in which dtypes to use to accumulate specific operations, thus careful tracking is required. Moreover, experiments with longer sequence length will also have to factor dtypes for reduction operations(e.g. reduce-scatter) across multiple chips.</p>
 <br>
         <p>For our purposes of a BF16 kernel with accumulations done in FP32, however, we can happily use order invariance of online softmax and move on. </p>
 
@@ -270,17 +300,17 @@
       </figure>
 <br>
         <ol>
-            <h3>1. Redundant Memory Accesses</h3>
+            <h3><span style="font-weight: 500;">1. Redundant Memory Accesses</span></h3>
           <p>- Nearby blocks will share a lot of common elements as stride is less than block size (e.g. Per NSA’s paper setup, contiguous blocks share ¾ elements, which is a significant overlap)</p>
           <p>- If each block is fetched independently, however, there will be multiple fetches of the same elements, deteriorating arithmetic intensity.<br><br></p>
 
-          <h3>2. Ambiguous Pallas Grid Definition</h3>
+          <h3><span style="font-weight: 500;">2. Ambiguous Pallas Grid Definition>/</h3>
           <p>- A Grid in Pallas is, by definition, sequential blocks of memory that do not overlap each other.</p>
           <p>- This directly conflicts with NSA’s sliding-convolution-esque approach where stride < block_size.</p>
         </ol>
 <!-- <br> -->
 
-        <p><br>Changing the stride to be equal to block_size is not an option. Doing this changes the algorithm completely as NSA benefits from information granularity given by overlapping blocks.</p>
+        <p><br>Changing the stride to be equal to block_size is not an option. Doing this changes the algorithm completely as NSA benefits from information granularity given from overlapping blocks.</p>
 
         <p>In essence, we need to find a way to do strided computation efficiently using Pallas.<br><br></p>
 
@@ -305,14 +335,21 @@
 
         <p>Concretely, NSA's inductive bias is that there is spatial continuity and locality in attention patterns. This extends to the selection branch as selection score distributions follow this blockwise clustering behavior.</p>
 
-        <p>We can use this bias directly to optimize pipeline efficiency. Given that one tile of loaded data covers one cluster of selected blocks, we can skip the loading of most tiles. This is allowed as contiguous blocks have high levels of overlap (e.g. block_size > stride; NSA block size=64, stride=16).</p>
+        <p>
+<mark style="background: #fff2cf;">We can use this bias directly to optimize pipeline efficiency.</mark> 
+Given that one tile of loaded data covers one cluster of selected blocks, we can skip the loading of most tiles. 
+This is allowed as contiguous blocks have high levels of overlap (e.g. \(\text{selection block size} > \text{stride}; \ \text{NSA block size} = 64, \ \text{stride} = 16\)).
+</p>
 
-        <p>With NSA's default configuration of selection block_size=64, stride=16, and top_n=16, let's think about the worst-case scenario.</p>
+        <p>
+With NSA's default configuration of 
+\( \text{selection block size} = 64, \ \text{stride} = 16,\ \text{top_n} = 16\), let's think about the worst-case scenario.
+</p>
 
         <br>
         <h2>What is the worst-case tile length? (i.e. largest tile)</h2>
 
-        <p>The worst-case scenario is when all top_n blocks lie in a single cluster(i.e. All top_n blocks are contiguous). Since there is 75% overlap between contiguous blocks, all 16 blocks will lead to a tile size of (64*0.25 * 16) = 256. This will be the upper bound of our Bk dimension where Bk is the block size used for online softmax.</p>
+        <p>The worst-case scenario is when all top_n blocks lie in a single cluster(i.e. All top_n blocks are contiguous). Since there is 75% overlap between contiguous blocks, all 16 blocks will lead to a tile size of (64*0.25 * 16) = 256. This will be the upper bound of our Bk dimension where Bk is the tile size used for online softmax.</p>
 
         <p>Recall that at one step we have q[G,H], K[H,Bk], V[H,Bk] of data per query in SRAM. That means we have ([16 * 128] + [128 * 256] + [128 * 256]) * 2(bf16) = 135KiB in SRAM. This is without query batching, so it's a bit large for GPUs, but TPUs have larger VMEMs that can afford multiple batches of this (Note: GPUs can afford pointer-based memory accesses, so this approach is actually not necessary for them).</p>
 
@@ -327,15 +364,16 @@
         <p>We can use some quirks of NSA to pick the optimal tile size. First, NSA implies that many of their selected blocks will be clustered together (i.e. non-uniform distribution of selected blocks). This means we could very much skip most tiles since most of our selected blocks will be within a couple tiles. But, at the same time, we want each tile to be large enough such that it holds multiple selected blocks due to clustering.</p>
 
         <p>There's three approximate scenarios:</p>
-        <ol>Given that selection block clusters span an average of X tokens and our we have Tile Size of T, <br>
-          <p>1. T < X : Redundant Memory Accesses</p>
-          <p>2. T >> X : Large Pipeline Bubbles + Low Arithmetic Intensity</p>
-          <p>3. T = X : Ideal Tile Size where a single fetch contains one cluster</p>
-        </ol>
+        <ol>
+  Given that selection block clusters span an average of \(X\) tokens and we have a tile size of \(T\), <br>
+  <p>1. \(T < X\): Redundant memory accesses</p>
+  <p>2. \(T \gg X\): Large pipeline bubbles + low arithmetic intensity</p>
+  <p>3. \(T \approx X\): Ideal tile size where a single fetch contains one cluster</p>
+</ol>
 
         <p>In essence, this becomes a question of finding the smallest tile size that is still large enough to contain the expected size of a single block cluster.</p>
 
-        <p>You might have noticed that knowing the distribution of the attention scores of p_slc is very important to get a good answer for this. This is true: the optimal tile size may be different depending on the spread of attention scores, locality of block cluster sizes, and also data modality. This is without, of course, harming pipeline efficiency or arithmetic intensity.</p>
+        <p>You might have noticed that knowing the distribution of the attention scores of \(p_{\text{slc}}\) is very important to get a good answer for this. This is true: the optimal tile size may be different depending on the spread of attention scores, locality of block cluster sizes, and also data modality. This is without, of course, harming pipeline efficiency or arithmetic intensity.</p>
 
         <p>This is an example of why I believe large scale ML in the modern day is a full stack problem that no engineer or researcher can do alone. There's quite a lot of moving parts going on. And for natively-trained sparsity approaches like NSA, multiple pretraining runs are probably required just to explore and understanding what best approaches forward may be.</p>
 
@@ -363,10 +401,9 @@
 
         <h3><span style="font-weight: 500;">Aside 1: Avoid jnp.inf as Sentinels</span></h3>
 
-        <p>I also ran into an interesting case with using jnp.infs as my sentinels: my HLO traces were being unnecessarily cluttered due to this small choice. This was because the compiler had to add extra conversion steps to accommodate both integer indices and my infinity which was represented as a floating point. Here’s one snippet below:</p>
-        <p>
-          “
-fused_computation.17 {
+        <p>I also ran into an interesting case with using jnp.infs as my sentinels: my HLO traces were being unnecessarily cluttered due to this small choice. This was because the compiler had to add extra conversion steps to accommodate both integer indices and my infinity which was represented as a floating point. Here’s one snippet below:<br><br></p>
+          <!-- <br> -->
+          <pre class="line-numbers"><code class="language-llvm">fused_computation.17 {
   param_1.207 = s32[4,256]{1,0:T(4,128)S(1)} parameter(1)
   convert.4 = u16[4,256]{1,0:T(4,128)(2,1)S(1)} convert(param_1.207)
   …
@@ -376,8 +413,8 @@ fused_computation.17 {
   select.30 = f32[4,256]{1,0:T(4,128)S(1)} select(compare.36, broadcast.87, broadcast.86)
   ROOT tuple.1 = (f32[4,256]{1,0:T(4,128)S(1)}, u16[4,256]{1,0:T(4,128)(2,1)S(1)}) tuple(select.30, convert.4)
 }
-“
-        </p>
+</code></pre>
+<br>
         <p>The constant, broadcast, select ops had to be added just to accommodate my choice of jnp.inf. I left it as is now since I thought this doesn't increase my runtime(just increasing the time taking to compile), but got me curious whether large scale production systems consider this a problem.<br><br></p>
 
         <h3><span style="font-weight: 500;">Aside 2: Practical Implementation Notes</span></h3>
@@ -403,7 +440,7 @@ fused_computation.17 {
       </figure>
 
         <p>There's a ~2.5x speedup and an approximately (K * num_slc_blks*slc_blk_size * H * 4(FP32) * 2(for K_slc, V_slc) reduction in memory, as these intermediate matrices are no longer materialized.</p>
-        <p>As a disclaimer this is definitely cherry-picked and does not hold for long sequences... We'll analyze this shortly after, but let's check correctness first.</p>
+        <p>As a disclaimer this is definitely cherry-picked and this trend does not continue for long sequences. We'll analyze this shortly after, but let's check correctness first.</p>
 <br>
         <h2><span style="font-weight: 500;">2. Correctness</span></h2>
 
@@ -415,7 +452,7 @@ fused_computation.17 {
           <img src="images/kernel_vis_highres.png" alt="filler" style="max-width: 950px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
           <figcaption style="margin-top: 10px; font-style: italic;">rtol and atol over different axes(top) + more fine-grained per K / G head info (bottom)</figcaption>
       </figure>
-
+<br>
         <p>For our case, the absolute error is most relevant since our synthetic test data was initialized with a standard normal distribution (Note: low variance centered around zero makes rtol spikes more likely; but atol for these elements are typically low, thus passing jnp.allclose).</p>
 <br>
         <h3><span style="font-weight: 500;">Aside: Visualization Tooling Matters</span></h3>
@@ -439,13 +476,13 @@ fused_computation.17 {
 
         <p>First, let's analyze the obvious culprit:</p>
 
-        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 1. MXU/VPU Underutilization</span></h3>
+        <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 1. MXU / VPU Underutilization</span></h3>
 
-        <p>Arithmetic intensity is quite low as our kernel is closer to a GEMV than a GEMM in a single-query scenario. Recall that TPUs perform matmuls on MXUs, which are 128x128 systolic arrays(until TPUv5e). Specifically, they perform a single [8x128]@[128,128] matmul per 8 cycles.</p>
+        <p>Arithmetic intensity is quite low as our kernel is closer to a GEMV than a GEMM in a single-query scenario. Recall that TPUs perform matmuls on MXUs, which are 128x128 systolic arrays(newer TPUs have 256x256). Specifically, they perform a single [8x128]@[128,128] matmul per 8 cycles.</p>
 
-        <p>However, recall that our kernel's single query case is doing q_tile[G,H] @ K_blk[slc_blk_size, H].T = [16,128]@[128,128]. This is essentially a GEMV-esque operation in a TPU since this is done in 16 cycles. In other words, the "stream" of data that systolic arrays love is absent.</p>
+        <p>However, recall that our kernel's single query case is doing q_tile[G,H] @ K_blk[slc_blk_size, H].T = [16,128]@[128,128]. This is essentially a GEMV-esque operation on a TPU since this is done in 16 cycles. In other words, the "stream" of data that systolic arrays love is absent.</p>
 
-        <p>Also, the way we handle VPU ops is problematic too. Any vector operation(i.e. online softmax operations) are done by VPUs, and they specifically want (8,128) tiles. However, our current online softmax accumulators are in [G, 1]=[16,1]. This means that each accumulator has to be padded to [16,256] to be passed into our VPU, hence limiting VPU bandwidth. Thus, query batching has to fix this VPU lane optimization issue too.</p>
+        <p>Also, the way we handle VPU ops is problematic too. Any vector operation(i.e. online softmax operations) are done by VPUs, and they specifically want (8,128) tiles. However, our current online softmax accumulators are in [G, 1]=[16,1]. This means that each accumulator has to be padded to [16,256] to be passed into our VPU, hence limited by VPU bandwidth. Thus, VPU lane optimization must be done when implementing query batching.</p>
 
         <p><br>However, there's a more subtle experiment-setup issue:</p>
 
@@ -458,7 +495,7 @@ fused_computation.17 {
           <figcaption style="margin-top: 10px; font-style: italic;">Prefetch Maps of Different Seqlens; our synthetic data is not reflecting our kernel's inductive bias</figcaption>
       </figure>
 <br>
-        <p>Above are the prefetch maps of three sequences(top_n=16). Ideally, we want to see most blocks clustered into a few chunks for each row. Instead, however, we only have 1~2 blocks per chunk.</p>
+        <p>Above are the prefetch maps of three sequences(\(\text{top-}n = 16\)). Ideally, we want to see most blocks clustered into a few chunks for each row. Instead, however, we only have 1~2 blocks per chunk.</p>
 
         <p>This means we have a terrible pipeline where most chunks will be loaded to process just 1~2 blocks, hence deteriorating arithmetic intensity.</p>
 
@@ -485,7 +522,7 @@ fused_computation.17 {
       </figure>
 <br>
 
-        <p>Specifically, when I was testing with {seqlen=131,072; Bk=256, top_n=16}, the total size of our scalar prefetch argos alone is 24.8 KiB ((compute_mask[K, T_kv//Bk] + prefetch_map[K, T_kv//Bk] + compute_base_idx[K, T_kv//Bk] + global_slc_idx[K, top_n]) * 4(FP32)) = 24.832 KiB).</p>
+        <p>Specifically, when I was testing with {seqlen=131,072; Bk=256, top_n=16}, the total size of our scalar prefetch args alone is 24.8 KiB ((compute_mask[K, T_kv//Bk] + prefetch_map[K, T_kv//Bk] + compute_base_idx[K, T_kv//Bk] + global_slc_idx[K, top_n]) * 4(FP32)) = 24.832 KiB).</p>
 
         <p>We can do a small optimization of storing the compute_mask, prefetch_map, and compute_base_idx in uint16 and upcast to int32 as needed (Note: indexes must be int32 in Pallas, so upcasting is a necessity).</p>
 
@@ -494,29 +531,30 @@ fused_computation.17 {
         <p>This reduces our total SMEM usage to 12.54 KiB (3*(K * T_kv//Bk) * 2(uint16) + (K * T_kv//Bk) * 4(FP32) = 12.544 KiB).</p>
 
 
-        <h2><span style="font-weight: 500;"><br>Current Limitations and Future Steps</span></h2>
+        <h2><span style="font-weight: 500;"><br>Current Limitations and Next Steps</span></h2>
+
         <br>
         <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 1. Fix Block Stride Edge Case</span></h3>
         <p>My current kernel has a critical edge case: it does not account for when selection blocks lie between the fixed boundary of two tiles.</p>
         <p>- Potential approach: User 'rdyro' from JAX discord suggested using manual DMA from HBM to design my own memory pipeline.</p>
 <br>
         <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 2. Changing Selection Block Size, Compression Block Size, and Stride</span></h3>
-        <p>Although my NSA JAX baseline uses the default setting(cmp_blk_size=32, slc_blk_size=64, stride=16, top_n=16) from the NSA paper, my TPU kernel implementation uses slightly different values(cmp_blk_size=64, slc_blk_size=128, stride=32, top_n=8).</p>
+        <p>Although my NSA JAX baseline uses the default setting \((l = 32,\; l' = 64,\; d = 16,\; \text{top_n} = 16)\) from the NSA paper, my TPU kernel implementation uses slightly different values\((l = 64,\; l' = 128,\; d = 32,\; \text{top_n} = 8)\).</p>
         <p>This was to accomodate for hardware utilization(e.g. MXU layout is 128x128), token budget consistency(keep slc_blk_size * top_n consistent), and information overlap granularity (keep overlap factor for contiguous selection blocks to be ¾).</p>
         <p>However, this could change training dynamics completely as the same fine-grained information may be lost. For example, a smaller selection block size may allow the model to extract only a few tokens around the "important" part whereas a large selection block size may also include irrelevant tokens.</p>
 
-        <p>My guess is that this could lead the model to be less performant on fine-grained recall tasks(e.g. needle in a haystack) where a fine-grainedness of tokens is important.</p>
+        <p>My guess is that this could lead the model to be less performant on fine-grained recall tasks(e.g. needle in a haystack) where a smaller token block may be advantageous.</p>
 <br>
         <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 3. Design an Effective Query Batching Scheme</span></h3>
         <p>Query batching has two large issues to think about:</p>
         <p>&nbsp;&nbsp;&nbsp;&nbsp a. Overhead of computing prefetch maps due to dynamic sparsity</p>
-        <p>&nbsp;&nbsp;&nbsp;&nbsp b. Naive query batching does not guarantee a sparse prefetch map(e.g. query 0 ~ 16 could each select top_n number of selection blocks where no overlaps occur).</p>
+        <p>&nbsp;&nbsp;&nbsp;&nbsp b. Naive query batching does not guarantee a sparse prefetch map(e.g. worst case: query 0 ~ 16 could each select top_n number of selection blocks where no overlaps occur).</p>
         <p>The idea of union query tiling I was thinking above came from wondering whether if there's a way we can batch queries that attend to similar selection tokens. If so, then we could take the union of necessary selected blocks and find optimal tile sizes based on this. But this seemed like a stretch, especially without looking at concrete attention distributions. I'll have to give this more thought, but please help me out if you have any ideas!</p>
 
 
         <h2><span style="font-weight: 500;"><br>Closing</span></h2>
 
-        <p>This was a fun project to work on, and it was a lot more challenging than I expected. I want to take a look at distributed kernels next as I think that's where TPUs shine even more.</p>
+        <p>This was a fun project to work on, and it was a lot more challenging than I expected. I titled this as a "worklog", but this is actually kernel iteration 1. </p>
 
         <br><br><br>
         <h2>References</h2>

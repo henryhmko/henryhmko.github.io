@@ -186,7 +186,11 @@ a::after {
 .math-indent {
     display: inline-block;
     margin-left: 13em;
+    font-size: 1.2em;
 }
+/* .math-indent .MathJax_Display {
+    font-size: 4.0em;
+} */
 code, pre code {
     font-family: 'Fira Code', 'Courier New', monospace;
     /* font-feature-settings: "liga" 1;
@@ -269,5 +273,3 @@ code:not([class*="language-"]) {
         height: auto;
     }
 }
-
-
