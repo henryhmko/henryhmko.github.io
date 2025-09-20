@@ -78,6 +78,7 @@
         \]
     </span>
 </p>
+
         <p>Equation 9 in the paper has an error. Its purpose is to do block-wise pooling for cases when the block size used in the compression branch differs from that of the selection branch.</p>
 
         <p>However, its index calculations are off and it could also be simplified much further given the assumptions that NSA provides. First, NSA assumes a unified stride value. Secondly, it also assumes a divisibility constraint where block sizes from both branches must be divisible by the stride \((l \bmod d = 0 \text{ and } l' \bmod d = 0)\). This means all blocks – regardless of the branch – are aligned with the stride grid. And concretely, NSA’s original setup follows these assumptions and uses  \(d = 16,\; l = 32,\; l' = 64\).</p>
@@ -106,10 +107,15 @@
 
         <p>Here's the profile trace for the naive NSA implementation below. We see that "Build K_slc, V_slc" is taking up >99% of the time (Note: sequence length is 2048 for testing).</p>
 <br>
-        <figure style="text-align: center;">
-          <img src="images/naive_2048_v5e.png" alt="filler" style="max-width: 850px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Naive Version (seqlen=2048)</figcaption>
-      </figure>
+
+<figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/naive_2048_v5e.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 100%;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Naive Version (seqlen=2048)
+  </figcaption>
+</figure>
 <!-- <br> -->
         
         <p>Below is the code responsible for the majority of the trace.</p>
@@ -157,10 +163,14 @@
 
         <p><br><mark style="background: #fff2cf;">Vectorizing and performant indexing alone already gives us ~286x performance boost.</mark> This is not surprising as clean Gathers can give us speedups of 1~2 orders of magnitude.</p>
 
-        <figure style="text-align: center;">
-          <img src="images/vectorized_2048_v5e.png" alt="filler" style="max-width: 850px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Vectorized, XLA-Friendly Version (seqlen=2048)</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/vectorized_2048_v5e.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 100%;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Vectorized, XLA-Friendly Version (seqlen=2048)
+  </figcaption>
+</figure>
       
         <p><br>But notice how the majority of the time is still spent on building \(K_{\text{slc}}\) and \(V_{\text{slc}}\) matrices. Moreover, it's also spiking memory usage as these matrices are materialized.</p>
 
@@ -190,10 +200,15 @@
 
         <p><br> Let's dive into Pallas now. One key quirk of Pallas is that it also brings in the functional nature of JAX into kernel programming. This is better seen than said, so let's look at a matmul example in Pallas below.</p>
 <!-- <br> -->
-        <figure style="text-align: center;">
-          <img src="images/pallas_matmul.png" alt="filler" style="max-width: 450px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">A@B=C Matmul in Pallas</figcaption>
-      </figure>
+        
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/pallas_matmul.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: auto; max-width: 100%; height: auto; max-height: 500px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    A@B=C Matmul in Pallas
+  </figcaption>
+</figure>
       <br>
         <p>There are two key pieces:</p>
 
@@ -219,10 +234,14 @@
 
         <h4><span style="font-weight: 500;">TLDR on Scalar Prefetch: Pipeline optimization --  Don't load data that's not used.</span></h4>
 
-        <figure style="text-align: center;">
-          <img src="images/scalar_prefetch.png" alt="filler" style="max-width: 650px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Scalar Prefetch (Redrawn from Pallas Docs)</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/scalar_prefetch.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 650px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Scalar Prefetch (Redrawn from Pallas Docs)
+  </figcaption>
+</figure>
 
         <p>We can divide along the sequence dimension and only select blocks that are selected by top-K.</p>
 
@@ -310,10 +329,14 @@ This is the opposite scenario. Each block includes a new maximum, so we're syste
 
         <p>Let's define the problem first. Assume the worst case scenario where all selected block indexes are contiguous. This becomes an issue because of two reasons:</p>
 <br>
-        <figure style="text-align: center;">
-          <img src="images/contig_blocks.png" alt="filler" style="max-width: 650px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Case of Contiguous Selection Blocks</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/contig_blocks.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 650px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Case of Contiguous Selection Blocks
+  </figcaption>
+</figure>
 <br>
         <ol>
             <h3><span style="font-weight: 500;">1. Redundant Memory Accesses</span></h3>
@@ -343,10 +366,14 @@ This is the opposite scenario. Each block includes a new maximum, so we're syste
         </ol>
         <br>
 
-        <figure style="text-align: center;">
-          <img src="images/clustered_sparse_tiling.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;"></figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/clustered_sparse_tiling.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 900px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+  </figcaption>
+</figure>
+      
 <br>
 
         <p>Concretely, NSA's inductive bias is that there is spatial continuity and locality in attention patterns. This extends to the selection branch as selection score distributions follow this blockwise clustering behavior.</p>
@@ -466,15 +493,23 @@ With NSA's default configuration of
 <br>
         <h2><span style="font-weight: 500;">1. Vanilla case for seqlen=2048; Single Query</span></h2>
 <br>
-        <figure style="text-align: center;">
-          <img src="images/vectorized_2048_v5e.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Vectorized JAX (Baseline): 61.429 us</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/vectorized_2048_v5e.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 900px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Vectorized JAX (Baseline): 61.429 us
+  </figcaption>
+</figure>
       <br>
-      <figure style="text-align: center;">
-          <img src="images/pallas_2048.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Pallas Kernel (Mine): 24.793 us</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/pallas_2048.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 900px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Pallas Kernel (Mine): 24.793 us
+  </figcaption>
+</figure>
 
         <p>There's a ~2.5x speedup and an approximately (K * num_slc_blks*slc_blk_size * H * 4(FP32) * 2(for K_slc, V_slc) reduction in memory, as these intermediate matrices are no longer materialized.</p>
         <p>As a disclaimer this is definitely cherry-picked and this trend does not continue for long sequences. We'll analyze this shortly after, but let's check correctness first.</p>
@@ -485,10 +520,14 @@ With NSA's default configuration of
 
         <p>Here's a summary plot I used a lot for debugging while coding the kernel:<br><br> </p>
         <!-- <br> -->
-        <figure style="text-align: center;">
-          <img src="images/kernel_vis_highres.png" alt="filler" style="max-width: 950px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">rtol and atol over different axes(top) + more fine-grained per K / G head info (bottom)</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/kernel_vis_highres.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 950px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    rtol and atol over different axes(top) + more fine-grained per K / G head info (bottom)
+  </figcaption>
+</figure>
 <br>
         <p>For our case, the absolute error is most relevant since our synthetic test data was initialized with a standard normal distribution (Note: low variance centered around zero makes rtol spikes more likely; but atol for these elements are typically low, thus passing jnp.allclose).</p>
 <br>
@@ -504,10 +543,13 @@ With NSA's default configuration of
 <br>
         <h2><span style="font-weight: 500;">3. Long Context Performance (...but only Single Query for now)</span></h2>
 <br>
-        <figure style="text-align: center;">
-          <img src="images/single_query_plot_highres.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">hi</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/single_query_plot_highres.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 900px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+  </figcaption>
+</figure>
 
         <p>My kernel does not scale for long contexts and severely underuses hardware. Let's think about why this is the case. The easy way out would be to say this because we're only doing single-query, but there's more nuances when we dig in.</p>
 
@@ -527,10 +569,14 @@ With NSA's default configuration of
 
         <p>Recall that our inductive bias for this kernel design was assuming that blocks will be clustered together as the NSA paper implies. This is, however, not reflected well in our synthetic data.</p>
 
-        <figure style="text-align: center;">
-          <img src="images/no_inductive_bias.png" alt="filler" style="max-width: 900px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Prefetch Maps of Different Seqlens; our synthetic data is not reflecting our kernel's inductive bias</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/no_inductive_bias.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 900px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+    Prefetch Maps of Different Seqlens; our synthetic data is not reflecting our kernel's inductive bias
+  </figcaption>
+</figure>
 <br>
         <p>Above are the prefetch maps of three sequences(\(\text{top-}n = 16\)). Ideally, we want to see most blocks clustered into a few chunks for each row. Instead, however, we only have 1~2 blocks per chunk.</p>
 
@@ -553,10 +599,14 @@ With NSA's default configuration of
 
         <p>Although modern TPUs have SMEM sizes of ~1 MiB which does not necessitate this, I was originally working with TPUv2s that have a SMEM capacity of 16 KiB, hence the fix.</p>
 <br>
-        <figure style="text-align: center;">
-          <img src="images/SMEM_err.png" alt="filler" style="max-width: 600px; max-height: 100%; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">SMEM OOM for TPU v2</figcaption>
-      </figure>
+      <figure style="text-align: center; margin: 0; width: 100%;">
+  <img src="images/SMEM_err.png" 
+       alt="filler" 
+       style="display: block; margin: 0 auto; width: 100%; height: auto; max-width: 600px;">
+  <figcaption style="margin-top: 10px; font-style: italic;">
+SMEM OOM for TPU v2
+  </figcaption>
+</figure>
 <br>
 
         <p>Specifically, when I was testing with \(\text{seqlen} = 131{,}072;\; B_k = 256;\; \text{top_n} = 16\), the total size of our scalar prefetch args alone is 24.8 KiB ((compute_mask[K, T_kv//Bk] + prefetch_map[K, T_kv//Bk] + compute_base_idx[K, T_kv//Bk] + global_slc_idx[K, top_n]) * 4(FP32)) = 24.832 KiB).</p>

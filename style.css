@@ -183,11 +183,19 @@ a::after {
     background-color: #fff2cf;
     color: #000000;
 }
-.math-indent {
+/* original */
+/* .math-indent {
     display: inline-block;
     margin-left: 13em;
     font-size: 1.2em;
+} */
+.math-indent {
+    display: block;          /* full-width block element */
+    text-align: center;      /* center the math */
+    font-size: 1.2em;        /* make math larger (1.5x surrounding text) */
+    margin: 1em 0;           /* add vertical breathing room */
 }
+
 /* .math-indent .MathJax_Display {
     font-size: 4.0em;
 } */
