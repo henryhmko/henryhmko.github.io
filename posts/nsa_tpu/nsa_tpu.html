@@ -21,11 +21,11 @@
         <a href="../../non-technical/non-technical.html" class="about-me-link">non-technical</a>
     </header>
     <main>
-        <p>I enjoyed reading DeepSeek's NSA and I thought it would be an interesting challenge to implement and optimize it for TPUs.</p>
+        <p>I enjoyed reading <a href="https://arxiv.org/pdf/2502.11089" target="_blank">DeepSeek's NSA</a> and I thought it would be an interesting challenge to implement and optimize it for TPUs.</p>
 
         <p>I was especially curious about how NSA, which is heavily optimized for GPUs, could be optimized for TPUs which have fundamentally different design philosophies.</p>
 
-        <p>Before we dive in, here's the link to the colab notebook where all my code is. This includes the vectorized JAX baseline of NSA, Pallas kernels, and profiling code. I hope you get to tinker with my code to understand NSA and Pallas better.</p>
+        <p>Before we dive in, <a href="https://colab.research.google.com/drive/1g4fWIkUJRqO44KZ9WIM6PPXpyinDwh9a?usp=sharing" target="_blank">here's the link to the colab notebook</a> where all my code is. This includes the vectorized JAX baseline of NSA, Pallas kernels, and profiling code. I hope you get to tinker with my code to understand NSA and Pallas better.</p>
 
         <p><bold>Note:</bold> All code and experiments ran with TPU v5e. We'll be looking at Selection Branch only as that is the most quirky branch in NSA.</p>
 
@@ -259,7 +259,7 @@
 <br>
         <p>Online softmax is order invariant. Specifically, it does not matter which order we traverse or process our blocks in. <mark style="background: #fff2cf;">This allows us to reduce the original problem of dynamic, non-monotonic top-k indexing into a normal sparse attention problem.</mark> We can simply sort the selected blocks and traverse in that order. And sorting is affordable as its only done on top-n elements, where top-n is extremely small (e.g. NSA paper used top_n=16).</p>
 
-        <p>This works as intended on our FP32 kernel, but has important numerical stability implications in lower dtypes (especially FP8 and below).</p>
+        <p>This works as intended on our BF16 (with FP32 accumulation) kernel, but has important numerical stability implications in lower dtypes (especially FP8 and below).</p>
 <br>
 
 
@@ -322,7 +322,7 @@ This is the opposite scenario. Each block includes a new maximum, so we're syste
 
           <h3><span style="font-weight: 500;">2. Ambiguous Pallas Grid Definition</h3>
           <p>- A Grid in Pallas is, by definition, sequential blocks of memory that do not overlap each other.</p>
-          <p>- This directly conflicts with NSA’s sliding-convolution-esque approach where stride < block_size.</p>
+          <p>- This directly conflicts with NSA’s sliding-convolution-esque approach where \(d < l'\).</p>
         </ol>
 <!-- <br> -->
 
@@ -376,7 +376,7 @@ With NSA's default configuration of
 <!-- <br> -->
         <figure style="text-align: center;">
           <img src="images/pipeline_pointwise.gif" alt="TPU data movement visualized" style="max-width: 100%; max-height: 500px; width: auto; height: auto; display: block; margin: 0 auto;">
-          <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (from "How to Scale Your Model" <a href="#ref4">[4]</a>)</figcaption>
+          <figcaption style="margin-top: 10px; font-style: italic;">Pipelined Pointwise Operation (from "How to Scale Your Model" <a href="#ref9">[9]</a>)</figcaption>
       </figure>
 <br>
         <p>This is an interesting combination of how TPU memory pipelining is done on both the hardware and software level.</p>
@@ -429,11 +429,11 @@ With NSA's default configuration of
 
         <p>We can now see this as a suffix minimum problem that can be solved with prefix scan on flipped arrays where our binary associative operator is minimum between the two operands.</p>
 
-        <p>This approach the added advantage of mapping well to JAX: there's a jax.lax primitive for prefix scans(i.e. jax.lax.associative_scan) and is easily vmap-able, extending it for batched GQA heads or batched queries.</p>
+        <p>This approach the added advantage of mapping well to JAX: there's a <code>jax.lax</code> primitive for prefix scans(i.e. <code>jax.lax.associative_scan</code>) and is easily vmap-able, extending it for batched GQA heads or batched queries.</p>
 
-        <p>This covers prefetch maps for a dense-grid case, but recall that we're working with a sparse grid for NSA. This is to say whenever we don't want this block, we want to avoid loading it at all.</p>
+        <p>This covers prefetch maps for a dense-grid case, but recall that we're working with a sparse grid for NSA. This is to say whenever we don't want this tile, we should avoid loading it at all.</p>
 
-        <p>We can use sentinels to solve this. In essence, we flag invalid indices(i.e. blocks we skip) with sentinels to prevent them from interfering with our scan operation.<br><br></p>
+        <p>We can use sentinels to solve this. In essence, we flag invalid indices(i.e. tiles we skip) with sentinels to prevent them from interfering with our scan operation.<br><br></p>
 
 
         <h3><span style="font-weight: 500;">Aside 1: Avoid <code>jnp.inf</code> as Sentinels</span></h3>
@@ -498,7 +498,7 @@ With NSA's default configuration of
         <p>Note: Treescope was a great tool to visualize matrices as well!<br><br></p>
 
         <!-- <br> -->
-        <p>Let's go back to benchmarking. Previously, we've only tested a vanilla case for a short sequence length of 2048. The same trend will not continue since our Pallas kernel does not have query batching yet.</p>
+        <p>Let's go back to benchmarking. Previously, we've only tested a vanilla case for a short sequence length of 2048.</p>
 
         <p>Although it's a bit premature to benchmark long context without query batching implemented, let's see how it does.</p>
 <br>
@@ -586,56 +586,37 @@ With NSA's default configuration of
         <p>Query batching has two large issues to think about:</p>
         <p>&nbsp;&nbsp;&nbsp;&nbsp a. Overhead of computing prefetch maps due to dynamic sparsity</p>
         <p>&nbsp;&nbsp;&nbsp;&nbsp b. Naive query batching does not guarantee a sparse prefetch map(e.g. worst case: query 0 ~ 16 could each select top_n number of selection blocks where no overlaps occur).</p>
-        <p>The idea of union query tiling I was thinking above came from wondering whether if there's a way we can batch queries that attend to similar selection tokens. If so, then we could take the union of necessary selected blocks and find optimal tile sizes based on this. But this seemed like a stretch, especially without looking at concrete attention distributions. I'll have to give this more thought, but please help me out if you have any ideas!</p>
+        <p>The idea of union query tiling I was thinking above came from wondering whether if there's a way we can batch queries that attend to similar selection blocks. If so, then we could take the union of necessary selected blocks and find optimal tile sizes based on this. But this seemed like a stretch, especially without looking at concrete attention distributions. I'll have to give this more thought, but please help me out if you have any ideas!</p>
 
 
         <h2><span style="font-weight: 500;"><br>Closing</span></h2>
 
-        <p>This was a fun project to work on, and it was a lot more challenging than I expected. I titled this as a "worklog", but this is actually kernel iteration 1. </p>
+        <p>This was a fun project to work on, and it was a lot more challenging than I expected. I titled this as a "worklog", but this is actually kernel iteration 1, so I'll continue to look at this. I want to explore distribution kernels next too since I think those are scenarios where TPUs can shine even more.</p>
+
+        <p>Until then, I hope this blog and the colab notebook helps others tinker with TPUs and Pallas.</p>
 
         <br><br><br>
         <h2>References</h2>
 
-        <p id="ref1">[1] <a href="https://cloud.google.com/blog/products/compute/using-cloud-tpu-multislice-to-scale-ai-workloads" target="_blank">Google Blog: TPU Multi-Slice Training</a></p>
-        <p id="ref2">[2] <a href="https://arxiv.org/pdf/2105.04663" target="_blank">Xu, et al. "GSPMD: General and Scalable Parallelizaton for ML Computation Graphs"</a></p>
-        <p id="ref3">[3] <a href="https://gwern.net/doc/ai/scaling/hardware/2021-jouppi.pdf" target="_blank">Jouppi et al. "Ten Lessons From Three Generations Shaped Google's TPUv4i"</a></p>
-        <p id="ref4">[4] <a href="https://jax-ml.github.io/scaling-book/tpus/" target="_blank">How to Scale Your Model - TPUs</a></p>
-        <p id="ref5">[5] <a href="https://fleetwood.dev/posts/domain-specific-architectures#google-tpu" target="_blank">Domain Specific Architectures for AI Inference - TPUs</a></p>
-        <p id="ref6">[6] <a href="https://hc2023.hotchips.org/assets/program/conference/day2/ML%20training/HC2023.Session5.ML_Training.Google.Norm_Jouppi.Andy_Swing.Final_2023-08-25.pdf
-          " target="_blank">HotChips 2023: TPUv4</a></p>
-        <p id="ref7">[7] <a href="https://cloud.google.com/tpu/docs/v4
-          " target="_blank">Google Cloud Docs: TPUv4</a></p>
-        <p id="ref8">[8] <a href="https://arxiv.org/abs/1704.04760
-          " target="_blank">Jouppi et al. "In-Datacenter Performance Analysis of a Tensor Processing Unit" -- TPU origins paper</a></p>
-        <p id="ref9">[9] <a href="https://arxiv.org/abs/2304.01433" target="_blank">Jouppi et al. "TPU v4"-- TPUv4 paper</a></p>
-        <p id="ref10">[10] <a href="https://www.youtube.com/watch?v=0yPFBxkOKRY
-          " target="_blank">PaLM training video</a></p>
-        <p id="ref11">[11] <a href="https://hc33.hotchips.org/assets/program/tutorials/HC2021.Google.Sameer%20Kumar.pdf
-          " target="_blank">HotChips 2021: "Challenges in large scale training of Giant Transformers on Google TPU machines"</a></p>
-        <p id="ref12">[12] <a href="https://hc32.hotchips.org/assets/program/tutorials/HC2020.Google.SameerKumarDehaoChen.v02.pdf
-          " target="_blank">HotChips 2020: "Exploring Limits of ML Training on Google TPUs"</a></p>
-        <p id="ref13">[13] <a href="https://blog.google/products/google-cloud/ironwood-tpu-age-of-inference/
-          " target="_blank">Google Blog: Ironwood</a></p>
-        <p id="ref14">[14] <a href="https://old.hotchips.org/hc31/HC31_T3_Cloud_TPU_Codesign.pdf
-          " target="_blank">HotChips 2019: "Cloud TPU: Codesigning Architecture and Infrastructure"</a></p>
-        <p id="ref15">[15] <a href="https://www.youtube.com/watch?v=XkgtANeDrm8
-          " target="_blank">ETH Zurich's Comp Arch Lecture 28: Systolic Array Architectures</a></p>
-        <p id="ref16">[16] <a href="https://www.cs.ucla.edu/wp-content/uploads/cs/PATTERSON-10-Lessons-4-TPU-gens-CO2e-45-minutes.pdf
-          " target="_blank">Patterson presentation: "A Decade of Machine Learning Accelerators: Lessons Learned and Carbon Footprint"</a></p>
-        <p id="ref17">[17] <a href="https://personales.unican.es/vallejoe/Publications/C%C3%A1mara%20-%20TPDS'10%20-%20Twisted%20Torus%20Topologies%20for%20Enhanced%20Interconnection%20Networks.pdf
-          " target="_blank">Camara et al. "Twisted Torus Topologies for Enhanced Interconnection Networks."</a></p>
-        <p id="ref18">[18] <a href="https://gwern.net/doc/cs/hardware/2014-horowitz-2.pdf
-          " target="_blank">Horowitz article: "Computing's Energy Problem(and what we can do about it)"</a></p>
+        <p id="ref1">[1] <a href="https://docs.jax.dev/en/latest/pallas/index.html" target="_blank">Pallas Docs</a></p>
+        <p id="ref2">[2] <a href="https://github.com/jax-ml/jax/blob/main/jax/experimental/pallas/ops/tpu/flash_attention.py" target="_blank">Google's Flash Attention TPU Kernel</a></p>
+        <p id="ref3">[3] <a href="https://github.com/jax-ml/jax/blob/main/jax/experimental/pallas/ops/tpu/splash_attention/splash_attention_kernel.py" target="_blank">Google's Splash Attention TPU Kernel</a></p>
+        <p id="ref4">[4] <a href="https://github.com/fla-org/flash-linear-attention/blob/797bf72f2abbf53b42ed107f46f6d6fd7712ea6e/fla/ops/nsa/parallel.py" target="_blank">Flash Linear Attention(FLA)'s Triton NSA Kernel</a></p>
+        <p id="ref5">[5] <a href="https://courses.cs.washington.edu/courses/cse599m/23sp/notes/flashattn.pdf" target="_blank">Zihao Ye, "From Online Softmax to FlashAttention"</a></p>
+        <p id="ref6">[6] <a href="https://courses.csail.mit.edu/18.337/2004/book/Lecture_03-Parallel_Prefix.pdf
+          " target="_blank">MIT 18.337 Parallel Prefix Notes</a></p>
+        <p id="ref7">[7] <a href="https://github.com/vllm-project/vllm/blob/bef180f00978186fcc84f7ca6328a6ae6c39676d/vllm/v1/attention/backends/pallas.py#L123
+          " target="_blank">vLLM Pallas Backend</a></p>
+        <p id="ref8">[8] <a href="https://dl.acm.org/doi/pdf/10.1145/3360307
+          " target="_blank">Jouppi et al. "A Domain-Specific Supercomputer for Training Deep Neural Networks"</a></p>
+        <p id="ref9">[9] <a href="https://jax-ml.github.io/scaling-book/tpus/" target="_blank">Austin et al., "How to Scale Your Model", Google DeepMind, online, 2025.</a></p>
+        <p id="ref10">[10] <a href="https://arxiv.org/pdf/2502.11089
+          " target="_blank">Yuan et al., "Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention"</a></p>
 
 
 
 <br><br><br>
-<!--         
-        <p id="ref1">[1] <a href="https://github.com/srush/GPU-Puzzles" target="_blank">Sasha Rush, GPU Puzzles Github Repo</a></p>
-        <p id="ref2">[2] <a href="https://docs.nvidia.com/deeplearning/performance/dl-performance-gpu-background/index.html" target="_blank"> NVIDIA GPU Performance Guide</a></p>
-        <p id="ref3">[3] <a href="https://developer.nvidia.com/cuda-gpus" target="_blank">NVIDIA CUDA Compute Capability Specs</a></p>
-        <p id="ref4">[4] Programming Massively Parallel Processors(PMPP) Textbook, 4th ed. Hwu, Kirk, Hajj.</p> -->
-    
+
         </main>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-core.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/autoloader/prism-autoloader.min.js"></script>
