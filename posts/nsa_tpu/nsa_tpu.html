@@ -80,7 +80,7 @@
 </p>
         <p>Equation 9 in the paper has an error. Its purpose is to do block-wise pooling for cases when the block size used in the compression branch differs from that of the selection branch.</p>
 
-        <p>However, its index calculations are off and it could also be simplified much further given the assumptions that NSA provides. First, NSA assumes a unified stride value. Secondly, it also assumes a divisibility constraint where block sizes from both branches must be divisible by the stride \((l \bmod d = 0 \text{ and } l' \bmod d = 0)\). This means all blocks – regardless of the branch – are aligned with the stride grid. And concretely, NSA’s original setup follows these assumptions \((d = 16, l = 32, l' = 64)\).</p>
+        <p>However, its index calculations are off and it could also be simplified much further given the assumptions that NSA provides. First, NSA assumes a unified stride value. Secondly, it also assumes a divisibility constraint where block sizes from both branches must be divisible by the stride \((l \bmod d = 0 \text{ and } l' \bmod d = 0)\). This means all blocks – regardless of the branch – are aligned with the stride grid. And concretely, NSA’s original setup follows these assumptions and uses  \(d = 16,\; l = 32,\; l' = 64\).</p>
 
         <p>We can rewrite Eq.9 into standard blockwise pooling with this. Here’s the corrected version:</p>
 
@@ -128,7 +128,7 @@
    ] # [K top_n*l' H]</code></pre>
 <br>
 
-        <p>This seemingly innocent code has an indexing inefficiency. Specifically, each indexing axis(jnp.arange(K), blk_idx, and jnp.arange(H)) is broadcasted to shape [K, top_n, l', H] to accommodate all indexes. Even worse, they are then stacked together into a final index tensor of shape [K, top_n, l', H, 3].</p>
+        <p>This seemingly innocent code has an indexing inefficiency. Specifically, each indexing axis(<code>jnp.arange(K)</code>, <code>blk_idx</code>, <code>jnp.arange(H)</code>) is broadcasted to shape <code>[K, top_n, l', H]</code> to accommodate all indexes. Even worse, they are then stacked together into a final index tensor of shape <code>[K, top_n, l', H, 3]</code>.</p>
 
         <p>This means a large index tensor has to be materialized in our HLO graph, which XLA struggles to optimize.</p>
 
@@ -239,8 +239,24 @@
 
         <br>
         <h2><span style="font-weight: 500;">Solution: Use Order Invariance of Online Softmax</span></h2>
-(INSERT softmax math)
-
+<br>
+        <p>
+\[
+\begin{aligned}
+&\textbf{for } i = 1 \;\text{ to } \#\text{tiles do} \\
+&\quad x_i = Q[k,:] \; K^{T}[:, (i-1)b : ib] \\
+&\quad m_i^{(\text{local})} = \max_{j=1}^{b} \big( x_i[j] \big) \\
+&\quad m_i = \max \big( m_{i-1},\; m_i^{(\text{local})} \big) \\
+&\quad d_i = d_{i-1} \, e^{m_{i-1} - m_i} 
+    + \sum_{j=1}^{b} e^{\,x_i[j] - m_i} \\
+&\quad o_i = o_{i-1} \, e^{m_{i-1} - m_i} 
+    + \sum_{j=1}^{b} e^{\,x_i[j] - m_i} \, V[j + (i-1)b, :] \\
+&\textbf{end} \\
+& O[k,:] = \frac{o_{N/b}}{d_{N/b}}
+\end{aligned}
+\]
+</p>
+<br>
         <p>Online softmax is order invariant. Specifically, it does not matter which order we traverse or process our blocks in. <mark style="background: #fff2cf;">This allows us to reduce the original problem of dynamic, non-monotonic top-k indexing into a normal sparse attention problem.</mark> We can simply sort the selected blocks and traverse in that order. And sorting is affordable as its only done on top-n elements, where top-n is extremely small (e.g. NSA paper used top_n=16).</p>
 
         <p>This works as intended on our FP32 kernel, but has important numerical stability implications in lower dtypes (especially FP8 and below).</p>
@@ -304,7 +320,7 @@ This is the opposite scenario. Each block includes a new maximum, so we're syste
           <p>- Nearby blocks will share a lot of common elements as stride is less than block size (e.g. Per NSA’s paper setup, contiguous blocks share ¾ elements, which is a significant overlap)</p>
           <p>- If each block is fetched independently, however, there will be multiple fetches of the same elements, deteriorating arithmetic intensity.<br><br></p>
 
-          <h3><span style="font-weight: 500;">2. Ambiguous Pallas Grid Definition>/</h3>
+          <h3><span style="font-weight: 500;">2. Ambiguous Pallas Grid Definition</h3>
           <p>- A Grid in Pallas is, by definition, sequential blocks of memory that do not overlap each other.</p>
           <p>- This directly conflicts with NSA’s sliding-convolution-esque approach where stride < block_size.</p>
         </ol>
@@ -338,12 +354,12 @@ This is the opposite scenario. Each block includes a new maximum, so we're syste
         <p>
 <mark style="background: #fff2cf;">We can use this bias directly to optimize pipeline efficiency.</mark> 
 Given that one tile of loaded data covers one cluster of selected blocks, we can skip the loading of most tiles. 
-This is allowed as contiguous blocks have high levels of overlap (e.g. \(\text{selection block size} > \text{stride}; \ \text{NSA block size} = 64, \ \text{stride} = 16\)).
+This is allowed as contiguous blocks have high levels of overlap (e.g. \((l' > d;\; l' = 64,\; d = 16)\)).
 </p>
 
         <p>
 With NSA's default configuration of 
-\( \text{selection block size} = 64, \ \text{stride} = 16,\ \text{top_n} = 16\), let's think about the worst-case scenario.
+\(l' = 64,\; d = 16,\ \text{top_n} = 16\), let's think about the worst-case scenario.
 </p>
 
         <br>
@@ -351,7 +367,7 @@ With NSA's default configuration of
 
         <p>The worst-case scenario is when all top_n blocks lie in a single cluster(i.e. All top_n blocks are contiguous). Since there is 75% overlap between contiguous blocks, all 16 blocks will lead to a tile size of (64*0.25 * 16) = 256. This will be the upper bound of our Bk dimension where Bk is the tile size used for online softmax.</p>
 
-        <p>Recall that at one step we have q[G,H], K[H,Bk], V[H,Bk] of data per query in SRAM. That means we have ([16 * 128] + [128 * 256] + [128 * 256]) * 2(bf16) = 135KiB in SRAM. This is without query batching, so it's a bit large for GPUs, but TPUs have larger VMEMs that can afford multiple batches of this (Note: GPUs can afford pointer-based memory accesses, so this approach is actually not necessary for them).</p>
+        <p>Recall that at one step we have <code>q[G,H]</code>, <code>K[H,Bk]</code>, <code>V[H,Bk]</code> of data per query in SRAM. That means we have ([16 * 128] + [128 * 256] + [128 * 256]) * 2(bf16) = 135KiB in SRAM. This is without query batching, so it's a bit large for GPUs, but TPUs have larger VMEMs that can afford multiple batches of this (Note: GPUs can afford pointer-based memory accesses, so this approach is actually not necessary for them).</p>
 
         <p>Tying this into pipeline optimization, all expensive HBM <=> VMEM transfers can be minimized to load only select tiles and skip the rest. And within each loop, each block within a tile has to be loaded sequentially but this is within the VMEM<=>VREG regime which is much faster.</p>
 
@@ -399,7 +415,7 @@ With NSA's default configuration of
         <p>We can use sentinels to solve this. In essence, we flag invalid indices(i.e. blocks we skip) with sentinels to prevent them from interfering with our scan operation.<br><br></p>
 
 
-        <h3><span style="font-weight: 500;">Aside 1: Avoid jnp.inf as Sentinels</span></h3>
+        <h3><span style="font-weight: 500;">Aside 1: Avoid <code>jnp.inf</code> as Sentinels</span></h3>
 
         <p>I also ran into an interesting case with using jnp.infs as my sentinels: my HLO traces were being unnecessarily cluttered due to this small choice. This was because the compiler had to add extra conversion steps to accommodate both integer indices and my infinity which was represented as a floating point. Here’s one snippet below:<br><br></p>
           <!-- <br> -->
@@ -415,7 +431,7 @@ With NSA's default configuration of
 }
 </code></pre>
 <br>
-        <p>The constant, broadcast, select ops had to be added just to accommodate my choice of jnp.inf. I left it as is now since I thought this doesn't increase my runtime(just increasing the time taking to compile), but got me curious whether large scale production systems consider this a problem.<br><br></p>
+        <p>The constant, broadcast, select ops had to be added just to accommodate my choice of <code>jnp.inf</code>. I left it as is now since I thought this doesn't increase my runtime(just increasing the time taking to compile), but got me curious whether large scale production systems consider this a problem.<br><br></p>
 
         <h3><span style="font-weight: 500;">Aside 2: Practical Implementation Notes</span></h3>
 
@@ -444,7 +460,7 @@ With NSA's default configuration of
 <br>
         <h2><span style="font-weight: 500;">2. Correctness</span></h2>
 
-        <p>This passes a jnp.allclose with our baseline using rtol=1e-6, atol=1e-4 with input/outputs in BF16. This was made possible because our online softmax and matmul accumulations were done in FP32.</p>
+        <p>This passes a <code>jnp.allclose</code> with our baseline using <code>rtol=1e-6, atol=1e-4</code> with input/outputs in BF16. This was made possible because our online softmax and matmul accumulations were done in FP32.</p>
 
         <p>Here's a summary plot I used a lot for debugging while coding the kernel:<br><br> </p>
         <!-- <br> -->
@@ -478,11 +494,11 @@ With NSA's default configuration of
 
         <h3><span style="font-weight: 500;">&nbsp;&nbsp;&nbsp;&nbsp 1. MXU / VPU Underutilization</span></h3>
 
-        <p>Arithmetic intensity is quite low as our kernel is closer to a GEMV than a GEMM in a single-query scenario. Recall that TPUs perform matmuls on MXUs, which are 128x128 systolic arrays(newer TPUs have 256x256). Specifically, they perform a single [8x128]@[128,128] matmul per 8 cycles.</p>
+        <p>Arithmetic intensity is quite low as our kernel is closer to a GEMV than a GEMM in a single-query scenario. Recall that TPUs perform matmuls on MXUs, which are 128x128 systolic arrays(newer TPUs have 256x256). Specifically, they perform a single <code>[8x128]@[128,128]</code> matmul per 8 cycles.</p>
 
-        <p>However, recall that our kernel's single query case is doing q_tile[G,H] @ K_blk[slc_blk_size, H].T = [16,128]@[128,128]. This is essentially a GEMV-esque operation on a TPU since this is done in 16 cycles. In other words, the "stream" of data that systolic arrays love is absent.</p>
+        <p>However, recall that our kernel's single query case is doing <br><code>q_tile[G,H] @ K_blk[slc_blk_size, H].T = [16,128]@[128,128]</code>. This is essentially a GEMV-esque operation on a TPU since this is done in 16 cycles. In other words, the "stream" of data that systolic arrays love is absent.</p>
 
-        <p>Also, the way we handle VPU ops is problematic too. Any vector operation(i.e. online softmax operations) are done by VPUs, and they specifically want (8,128) tiles. However, our current online softmax accumulators are in [G, 1]=[16,1]. This means that each accumulator has to be padded to [16,256] to be passed into our VPU, hence limited by VPU bandwidth. Thus, VPU lane optimization must be done when implementing query batching.</p>
+        <p>Also, the way we handle VPU ops is problematic too. Any vector operation(i.e. online softmax operations) are done by VPUs, and they specifically want (8,128) tiles. However, our current online softmax accumulators are in [G, 1]=[16,1]. This means that each accumulator has to be padded to <code>[16,256]</code> to be passed into our VPU, hence limited by VPU bandwidth. Thus, VPU lane optimization must be done when implementing query batching.</p>
 
         <p><br>However, there's a more subtle experiment-setup issue:</p>
 
@@ -522,7 +538,7 @@ With NSA's default configuration of
       </figure>
 <br>
 
-        <p>Specifically, when I was testing with {seqlen=131,072; Bk=256, top_n=16}, the total size of our scalar prefetch args alone is 24.8 KiB ((compute_mask[K, T_kv//Bk] + prefetch_map[K, T_kv//Bk] + compute_base_idx[K, T_kv//Bk] + global_slc_idx[K, top_n]) * 4(FP32)) = 24.832 KiB).</p>
+        <p>Specifically, when I was testing with \(\text{seqlen} = 131{,}072;\; B_k = 256;\; \text{top_n} = 16\), the total size of our scalar prefetch args alone is 24.8 KiB ((compute_mask[K, T_kv//Bk] + prefetch_map[K, T_kv//Bk] + compute_base_idx[K, T_kv//Bk] + global_slc_idx[K, top_n]) * 4(FP32)) = 24.832 KiB).</p>
 
         <p>We can do a small optimization of storing the compute_mask, prefetch_map, and compute_base_idx in uint16 and upcast to int32 as needed (Note: indexes must be int32 in Pallas, so upcasting is a necessity).</p>
 
